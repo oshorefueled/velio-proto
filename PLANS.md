@@ -140,7 +140,7 @@ Hosting itself consumes no bookable spot. If the host books through the same acc
 
 ### 3.4 Invited guest journey in the mobile app
 
-1. Open an invitation link in the installed app or enter its code. An HTTPS invitation also provides a responsive preview; retain the invitation when continuing into the app.
+1. Open an invitation link in the installed app or enter its code. An invitation link also provides a responsive browser preview; retain the invitation when continuing into the app. Localhost HTTP is sufficient for development verification. HTTPS delivery is deployment follow-up.
 2. Read the activity, itinerary, host information, inviter, price and availability before entering account details.
 3. Continue to checkout. If signed out, enter an email; the same step creates a new account or opens the existing one. A signed-in guest uses their current account.
 4. For a vouch, match the account email to the intended recipient. If it differs, explain that the invitation was sent to another email and allow the guest to change account. Public invitations have no recipient-email restriction.
