@@ -20,6 +20,15 @@ export function App(): ReactNode {
   const ready = status.status === "ready";
   const sessionToken = ready ? status.token : null;
   const bookingStore = useMemo(() => createBookingStore(api, store), [api, store]);
+  const [bookingRevision, setBookingRevision] = useState(0);
+  useEffect(() => {
+    let lastBookingId: string | undefined;
+    return bookingStore.subscribe(({ phase }) => {
+      if (phase.kind !== "confirmed" || phase.booking.id === lastBookingId) return;
+      lastBookingId = phase.booking.id;
+      setBookingRevision(value => value + 1);
+    });
+  }, [bookingStore]);
   const [page, setPage] = useState<Page>(() => {
     if (new URLSearchParams(location.search).has("activity") || !ready) return "explore";
     return status.user.email === "host@demo.velio.test" ? "hosting" : status.user.email === "booker@demo.velio.test" ? "bookings" : "explore";
@@ -32,7 +41,7 @@ export function App(): ReactNode {
   const promptDialog = useRef<HTMLDialogElement>(null);
   const hostedGeneration = useRef(0);
   const observationId = useMemo(() => crypto.randomUUID(), [selectedId, sessionToken]);
-  const needsSignIn = identityPrompt || status.status === "credential-lost";
+  const needsSignIn = identityPrompt || (status.status === "credential-lost" && !status.restoring);
 
   useEffect(() => {
     if (ready) setIdentityPrompt(false);
@@ -109,19 +118,20 @@ export function App(): ReactNode {
       <button type="button" className="button-ghost" onClick={() => { setIdentityPrompt(false); if (status.status === "credential-lost") store.signOut(); }}>Close</button>
       <IdentityPanel contextNote="Your draft and selected activity are kept." inviteCode={inviteCode ?? undefined} />
     </dialog>}
+    {status.status === "credential-lost" && status.restoring && <p className="notice" role="status">Restoring access for {status.lostFrom?.email}… Your checkout and drafts are kept.</p>}
     <main className={`workspace${page === "publish" && !inviteCode ? " publishing" : ""}`}>
       <div className="column publish-column" hidden={page !== "publish" || !!inviteCode}>
         <PublishForm onPublished={activity => { selectActivity(activity.id); setPage("hosting"); reloadHosted(); }} />
       </div>
       {!inviteCode && page !== "publish" && <>
         <div className="column">
-          {page === "explore" ? <ActivityBrowser selectedId={selectedId} onSelect={selectActivity} />
+          {page === "explore" ? <ActivityBrowser selectedId={selectedId} onSelect={selectActivity} bookingRevision={bookingRevision} />
             : page === "hosting" ? <HostedActivities activities={hosted.activities} selectedId={selectedId} onSelect={selectActivity} reload={reloadHosted} loading={hosted.loading} error={hosted.error} />
               : ready ? <SavedBookings onSelect={selectActivity} /> : <p className="hint">Sign in to see your bookings.</p>}
         </div>
         <div className="column">
           {view === "invites" && selectedId ? <InvitePanel key={selectedId} activityId={selectedId} onBack={backToActivity} onRequestIdentity={() => setIdentityPrompt(true)} />
-            : selectedId ? <GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onRequestIdentity={() => setIdentityPrompt(true)} onOpenInvites={openInvites} />
+            : selectedId ? <GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onOpenInvites={openInvites} />
               : <div className="selection-intro"><p className="eyebrow">{page === "hosting" ? "Make something happen" : page === "bookings" ? "Your next outing" : "Find your people"}</p><h2>{page === "hosting" ? "Bring a good plan to life." : "A little adventure starts here."}</h2><p>{page === "hosting" ? "Choose an activity to see its bookings, or publish something new." : "Choose an activity to see the itinerary, meet your host and plan your day."}</p></div>}
         </div>
       </>}

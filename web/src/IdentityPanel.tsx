@@ -19,12 +19,13 @@ export function IdentityPanel({
   const { state, store } = useSession();
   const fieldId = useId();
   const status = state.status;
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(status.status === "credential-lost" ? status.lostFrom?.email ?? "" : "");
   const [pending, setPending] = useState(false);
   const selection = useRef(0);
+  const establishment = useRef<AbortController | null>(null);
   useEffect(() => {
     setPending(false);
-    return () => { selection.current += 1; store.cancelEstablishment(); };
+    return () => { selection.current += 1; establishment.current?.abort(); };
   }, [store, inviteCode]);
 
   const error =
@@ -35,11 +36,13 @@ export function IdentityPanel({
     if (pending) return;
     const currentSelection = ++selection.current;
     setPending(true);
+    const controller = new AbortController();
+    establishment.current = controller;
     void store
       .establish({
         email: email.trim(),
         inviteCode: inviteCode?.trim() || undefined,
-      })
+      }, controller.signal)
       .finally(() => { if (selection.current === currentSelection) setPending(false); });
   };
 

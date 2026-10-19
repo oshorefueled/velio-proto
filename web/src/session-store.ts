@@ -20,7 +20,7 @@ export type SessionStatus =
   | { status: "boot" }
   | { status: "anonymous"; error?: string }
   | { status: "ready"; token: string; user: UserSnapshot }
-  | { status: "credential-lost"; lostFrom: UserSnapshot | null; error?: string };
+  | { status: "credential-lost"; lostFrom: UserSnapshot | null; restoring?: boolean; error?: string };
 
 export interface SessionState {
   status: SessionStatus;
@@ -61,9 +61,8 @@ export interface SessionStore {
   /** Establish or resume the person for a contact; generation-guarded.
    * An optional inviteCode travels unchanged: the backend applies it as
    * acquisition only when this selection creates a new person. */
-  establish(input: { email: string; displayName?: string; inviteCode?: string }): Promise<void>;
-  cancelEstablishment(): void;
-  /** Drop the credential after a 401 while keeping on-screen context. */
+  establish(input: { email: string; displayName?: string; inviteCode?: string }, signal?: AbortSignal): Promise<void>;
+  /** Restore the remembered email after a 401 without replaying a mutation. */
   credentialLost(error?: string): void;
   /** Explicit identity switch: forget everything, back to selection. */
   signOut(): void;
@@ -78,11 +77,13 @@ export function createSessionStore(
   const visitor = readJson<{ visitorId: string }>(storage, VISITOR_KEY) ?? { visitorId: crypto.randomUUID() };
   storage.setItem(VISITOR_KEY, JSON.stringify(visitor));
 
-  const persisted = readJson<{ token: string; user: UserSnapshot }>(storage, SESSION_KEY);
+  const persisted = readJson<{ token: string | null; user: UserSnapshot }>(storage, SESSION_KEY);
   let state: SessionState = {
     status:
       persisted !== null
-        ? { status: "ready", token: persisted.token, user: persisted.user }
+        ? persisted.token !== null
+          ? { status: "ready", token: persisted.token, user: persisted.user }
+          : { status: "credential-lost", lostFrom: persisted.user }
         : { status: "anonymous" },
     visitorId: visitor.visitorId,
   };
@@ -94,24 +95,29 @@ export function createSessionStore(
     for (const listener of listeners) listener(state);
   }
 
-  return {
+  const store: SessionStore = {
     getState: () => state,
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
 
-    async establish(input) {
+    async establish(input, signal) {
+      if (signal?.aborted) return;
       const generation = ++establishGeneration;
-      const wasCredentialLost = state.status.status === "credential-lost";
+      const lostFrom = state.status.status === "credential-lost" ? state.status.lostFrom : null;
+      const restoring = state.status.status === "credential-lost" && state.status.restoring === true;
       try {
         const establishment: SessionEstablishment = await api.establishSession({
           ...input,
           visitId,
           visitorId: visitor.visitorId,
           channel: "web",
-        });
-        if (generation !== establishGeneration) return; // a newer attempt owns the store
+        }, signal);
+        if (generation !== establishGeneration || signal?.aborted) return;
+        if (restoring && lostFrom !== null && establishment.user.id !== lostFrom.id) {
+          throw new Error("Could not restore your remembered account. Please sign in again.");
+        }
         storage.setItem(
           SESSION_KEY,
           JSON.stringify({ token: establishment.session.token, user: establishment.user }),
@@ -121,7 +127,7 @@ export function createSessionStore(
           visitorId: visitor.visitorId,
         });
       } catch (err) {
-        if (generation !== establishGeneration) return;
+        if (generation !== establishGeneration || signal?.aborted) return;
         const message =
           err instanceof ApiError
             ? err.message
@@ -129,22 +135,24 @@ export function createSessionStore(
               ? err.message
               : "Selection failed";
         set({
-          status: wasCredentialLost
-            ? { status: "credential-lost", lostFrom: null, error: message }
+          status: lostFrom !== null
+            ? { status: "credential-lost", lostFrom, error: message }
             : { status: "anonymous", error: message },
           visitorId: visitor.visitorId,
         });
       }
     },
 
-    cancelEstablishment() {
-      establishGeneration += 1;
-    },
-
     credentialLost(error) {
-      storage.removeItem(SESSION_KEY);
+      if (state.status.status === "credential-lost") return;
       const lostFrom = state.status.status === "ready" ? state.status.user : null;
-      set({ status: { status: "credential-lost", lostFrom, error }, visitorId: visitor.visitorId });
+      if (lostFrom !== null) storage.setItem(SESSION_KEY, JSON.stringify({ token: null, user: lostFrom }));
+      else storage.removeItem(SESSION_KEY);
+      const restoring = lostFrom?.email !== undefined;
+      set({ status: { status: "credential-lost", lostFrom, restoring, error }, visitorId: visitor.visitorId });
+      if (restoring && lostFrom?.email !== undefined) {
+        void store.establish({ email: lostFrom.email });
+      }
     },
 
     signOut() {
@@ -153,4 +161,10 @@ export function createSessionStore(
       set({ status: { status: "anonymous" }, visitorId: visitor.visitorId });
     },
   };
+  if (state.status.status === "credential-lost" && state.status.lostFrom?.email !== undefined) {
+    const email = state.status.lostFrom.email;
+    state = { ...state, status: { ...state.status, restoring: true } };
+    void store.establish({ email });
+  }
+  return store;
 }
