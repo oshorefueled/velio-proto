@@ -74,4 +74,10 @@ an applied default.
 
 Do not merge pull requests into any branch based on assumed approval.
 
+7. **PLANS.md Is a Team Deliverable**
+
+PLANS.md is submitted to the team as written. Record verification evidence,
+execution summaries, and work logs in the commit message — keep PLANS.md
+itself to the plan document.
+
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
