@@ -9,6 +9,7 @@ import type { AvailabilityUpdate } from "../live/publication.js";
 import { captureExpectedViewers } from "../live/presence.js";
 import {
   InviteExpiredError,
+  InviteUsedError,
   InviteNotFoundError,
   InviteRecipientMismatchError,
   type InviteSnapshot,
@@ -102,6 +103,7 @@ type AttemptOutcome =
   | "invite_not_found"
   | "invite_expired"
   | "invite_recipient_mismatch"
+  | "invite_used"
   | "lock_timeout"
   | "failed"
   | "commit_unknown"
@@ -261,6 +263,7 @@ export async function bookActivity(
     | "invite_not_found"
     | "invite_expired"
     | "invite_recipient_mismatch"
+    | "invite_used"
     | undefined;
   let pendingResult: BookingResult | undefined;
   let commitAttempted = false;
@@ -339,11 +342,13 @@ export async function bookActivity(
       });
       if (!lookup.ok) {
         const outcome: AttemptOutcome =
-          lookup.reason === "expired"
-            ? "invite_expired"
-            : lookup.reason === "recipient_mismatch"
-              ? "invite_recipient_mismatch"
-              : "invite_not_found";
+          lookup.reason === "used"
+            ? "invite_used"
+            : lookup.reason === "expired"
+              ? "invite_expired"
+              : lookup.reason === "recipient_mismatch"
+                ? "invite_recipient_mismatch"
+                : "invite_not_found";
         await recordAttempt(client, {
           attemptId,
           source,
@@ -354,11 +359,13 @@ export async function bookActivity(
         });
         decidedOutcome = outcome;
         await client.query("COMMIT");
-        throw lookup.reason === "expired"
-          ? new InviteExpiredError()
-          : lookup.reason === "recipient_mismatch"
-            ? new InviteRecipientMismatchError()
-            : new InviteNotFoundError();
+        throw lookup.reason === "used"
+          ? new InviteUsedError()
+          : lookup.reason === "expired"
+            ? new InviteExpiredError()
+            : lookup.reason === "recipient_mismatch"
+              ? new InviteRecipientMismatchError()
+              : new InviteNotFoundError();
       }
       invite = lookup.invite;
     }
@@ -587,6 +594,9 @@ export async function bookActivity(
       }
       if (decidedOutcome === "invite_not_found") {
         throw new InviteNotFoundError();
+      }
+      if (decidedOutcome === "invite_used") {
+        throw new InviteUsedError();
       }
       if (decidedOutcome === "invite_expired") {
         throw new InviteExpiredError();

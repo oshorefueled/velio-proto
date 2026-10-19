@@ -21,7 +21,7 @@ import {
   InvalidOperationError,
   LockTimeoutError,
 } from "./booking/domain.js";
-import { InviteExpiredError, InviteNotFoundError, InviteRecipientMismatchError } from "./invites/domain.js";
+import { InviteExpiredError, InviteUsedError, InviteNotFoundError, InviteRecipientMismatchError } from "./invites/domain.js";
 import { EventConflictError } from "./clientevents/domain.js";
 import { AckRejectedError } from "./metrics/domain.js";
 import { RateLimitError } from "./ratelimit.js";
@@ -43,6 +43,7 @@ const STATUS: Record<string, number> = {
   booking_not_found: 404,
   invite_not_found: 404,
   invite_expired: 410,
+  invite_used: 409,
   invite_recipient_mismatch: 403,
   booking_outcome_unknown: 500,
   activity_sold_out: 409,
@@ -116,6 +117,7 @@ export function domainErrorHandler(err: FastifyError, request: FastifyRequest, r
   if (err instanceof ActivityStartedError) return sendError(reply, "activity_started", err.message);
   if (err instanceof ActivityCompletedError) return sendError(reply, "activity_completed", err.message);
   if (err instanceof InviteNotFoundError) return sendError(reply, "invite_not_found", err.message);
+  if (err instanceof InviteUsedError) return sendError(reply, "invite_used", err.message);
   if (err instanceof InviteExpiredError) return sendError(reply, "invite_expired", err.message);
   if (err instanceof InviteRecipientMismatchError) {
     return sendError(reply, "invite_recipient_mismatch", err.message);
