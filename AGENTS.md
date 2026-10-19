@@ -80,4 +80,29 @@ PLANS.md is submitted to the team as written. Record verification evidence,
 execution summaries, and work logs in the commit message — keep PLANS.md
 itself to the plan document.
 
+## Mobile UI verification
+
+- Default mobile UI end-to-end verification to the iPhone simulator. One iOS
+  simulator run is sufficient; do not repeat the same journey on Android or a
+  second device unless the user explicitly requests that additional coverage.
+  If the iPhone simulator is unavailable, report the blocker before choosing a
+  different platform.
+- Prefer stable widget keys or accessibility identifiers and semantic labels for
+  targeting controls. Inspect the current UI hierarchy before interacting; do
+  not guess coordinates or reuse bounds from an earlier layout.
+- If coordinate input is unavoidable, derive the target from the current UI
+  hierarchy or screenshot. Re-inspect after scrolling, navigation, keyboard
+  changes, or dialogs before the next interaction.
+- Before typing, verify that the intended field has focus. Replace its contents
+  using the available field-editing API, then verify the resulting value before
+  submitting. Do not blindly send repeated delete keys to an unverified field.
+- Wait for an observable screen or request outcome with a bounded timeout rather
+  than relying on fixed sleeps. After a missed interaction, inspect focus,
+  keyboard visibility, overlays, and the foreground app before retrying. If the
+  next attempt also misses, change the targeting method instead of continuing
+  coordinate trial and error.
+- Distinguish automation/navigation mistakes from application failures using
+  screenshots, device logs, and API evidence before changing product code.
+  Simulator checks do not establish physical-device haptic behavior.
+
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
