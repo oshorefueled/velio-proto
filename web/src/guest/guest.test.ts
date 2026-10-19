@@ -429,7 +429,7 @@ it("when a host publication expires the credential, identity recovery retains th
     if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
     return ok({});
   });
-  await click("Host tools");
+  await click("Publish activity");
   await act(async () => {
     const input = document.querySelector<HTMLInputElement>("#pub-title")!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Keep this draft");
@@ -442,7 +442,7 @@ it("when a host publication expires the credential, identity recovery retains th
       input.dispatchEvent(new Event("input", { bubbles: true }));
     }
   });
-  await click("Publish activity");
+  await act(async () => document.querySelector<HTMLFormElement>("#pub-title")!.closest("form")!.requestSubmit());
   await settle();
   expect(document.querySelector<HTMLInputElement>("#pub-title")?.value).toBe("Keep this draft");
   expect(document.querySelector('dialog[aria-label="Select your identity"]')).not.toBeNull();

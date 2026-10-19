@@ -62,6 +62,17 @@ export function registerBookingRoutes(app: FastifyInstance, deps: BookingRouteDe
     return result;
   });
 
+  app.get("/my/bookings", async (request) => {
+    const person = await requireSession(deps.identity, request);
+    const result = await deps.booking.pool.query<{
+      id: string; activity_id: string; plan_id: string; title: string; starts_at: Date; display_timezone: string;
+    }>(`SELECT b.id, b.activity_id, b.plan_id, a.title, a.starts_at, a.display_timezone
+        FROM bookings b JOIN activities a ON a.id=b.activity_id
+        WHERE b.user_id=$1 ORDER BY a.starts_at`, [person.id]);
+    return { bookings: result.rows.map(row => ({ id: row.id, activityId: row.activity_id, planId: row.plan_id,
+      activity: { id: row.activity_id, title: row.title, startsAt: row.starts_at.toISOString(), timezone: row.display_timezone } })) };
+  });
+
   app.get("/activities/:id/bookings/me", async (request) => {
     const person = await requireSession(deps.identity, request);
     const { id } = request.params as { id: string };

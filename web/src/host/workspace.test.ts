@@ -61,6 +61,7 @@ const activity = (id: string) => ({
   id,
   title: `Activity ${id}`,
   hostDisplayName: "Host",
+  hostId: "host",
   planId: `plan-${id}`,
   startsAt: "2025-01-01T12:00:00Z",
   timezone: "UTC",
@@ -100,7 +101,7 @@ async function mount(transport: Transport) {
   );
   // These are host-workspace checks: the app opens in booking tools (public
   // browse first), so switch to the host surface under test.
-  await click("Host tools");
+  await click("My activities");
   await settle();
 }
 async function click(text: string) {
@@ -149,7 +150,7 @@ it("when activity details fail, Retry reloads the same selected activity", async
   failed = false;
   await click("Retry");
   await settle(4);
-  expect(document.querySelector("#detail-heading")?.textContent).toBe(
+  expect(document.querySelector("#guest-detail-heading")?.textContent).toBe(
     "Activity a",
   );
 });
@@ -159,7 +160,7 @@ it("when details are observed, activity_viewed is sent only after the title is c
   await mount(
     transportWith(async (url) => {
       if (url.endsWith("/client-events")) {
-        titles.push(document.querySelector("#detail-heading")?.textContent);
+        titles.push(document.querySelector("#guest-detail-heading")?.textContent);
         return { status: 200, json: {} };
       }
       return { status: 200, json: { activity: activity("a"), invites: {} } };
@@ -241,33 +242,18 @@ it.each([200, 401])(
     expect(document.body.textContent).not.toContain("Your session expired");
   },
 );
-it("hidden panels never observe, and visible panels share one observation id for the same display", async () => {
-  const hostDetail = deferred<{ status: number; json: unknown }>();
-  const observedEventIds: string[] = [];
-  await mount(
-    transportWith(async (url, init) => {
-      if (url.endsWith("/client-events")) {
-        observedEventIds.push((JSON.parse(init.body ?? "{}") as { eventId: string }).eventId);
-        return { status: 200, json: {} };
-      }
-      if (init.headers.authorization !== undefined) return hostDetail.promise;
-      return { status: 200, json: { activity: activity("a"), invites: {} } };
-    }),
-  );
-  await settle();
-  expect(observedEventIds).toHaveLength(1); // booking tools displayed the loaded details at boot
-  await click("Host tools");
-  await settle(6);
-  expect(observedEventIds).toHaveLength(1); // host panel still loading, so nothing displayed it
-  await act(async () =>
-    hostDetail.resolve({
-      status: 200,
-      json: { activity: activity("a"), invites: {} },
-    }),
-  );
-  await settle(6);
-  expect(observedEventIds).toHaveLength(2); // the host panel displayed them now
-  expect(observedEventIds[0]).toBe(observedEventIds[1]); // one observation id — no double count
+it("when navigating between activity lists, the same detail has one live owner and one display observation", async () => {
+  ScriptedLiveSocket.instances.length = 0;
+  const eventIds: string[] = [];
+  await mount(transportWith(async url => {
+    if (url.endsWith("/client-events")) { eventIds.push("observed"); return { status: 200, json: {} }; }
+    return { status: 200, json: { activity: activity("a"), invites: {} } };
+  }));
+  await click("Explore activities");
+  await click("My activities");
+  expect(document.querySelectorAll("#guest-detail-heading")).toHaveLength(1);
+  expect(ScriptedLiveSocket.instances).toHaveLength(1);
+  expect(eventIds).toHaveLength(1);
 });
 
 it("when a live booking frame is newer, the host sees updated spots and participants without refresh and the rendered application is acknowledged", async () => {
@@ -388,6 +374,7 @@ it("when an account signs out with an unpublished activity, switching accounts r
   await mount(transportWith(async (url) => url.endsWith("/demo/sessions")
     ? { status: 200, json: { session: { token: "booker-token" }, user: { ...user, id: "booker", email: "booker@demo.velio.test" } } }
     : { status: 200, json: { activity: activity("a"), invites: {} } }));
+  await click("Publish activity");
   await act(async () => {
     const title = document.querySelector<HTMLInputElement>("#pub-title")!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(title, "Keep my activity draft");

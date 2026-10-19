@@ -24,7 +24,7 @@ export function HostedActivities({
   return (
     <section className="panel hosted-panel" aria-labelledby="hosted-heading">
       <div className="panel-head">
-        <h2 id="hosted-heading">Your activities</h2>
+        <h2 id="hosted-heading">My activities</h2>
         <button type="button" className="button-ghost" onClick={reload} disabled={loading}>
           {loading ? "Checking…" : "Refresh"}
         </button>

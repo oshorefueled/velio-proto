@@ -1,29 +1,30 @@
 import { useState } from "react";
-import { IdentityPanel } from "./IdentityPanel.js";
 import { useSession } from "./session.js";
 
-export function AccountSelector() {
+export type DemoAccount = "Host" | "Booker" | "Guest";
+
+export function AccountSelector({ onSelect, onSignIn }: {
+  onSelect?: (account: DemoAccount) => void;
+  onSignIn?: () => void;
+}) {
   const { state, store } = useSession();
-  const [selected, setSelected] = useState<"Host" | "Booker" | "Guest">(() => {
-    if (state.status.status !== "ready") return "Guest";
-    const email = state.status.user.email;
-    return email === "host@demo.velio.test" ? "Host" : email === "booker@demo.velio.test" ? "Booker" : "Guest";
-  });
-  const [signingIn, setSigningIn] = useState(false);
-  const ready = state.status.status === "ready";
+  const [pendingSelection, setPendingSelection] = useState<DemoAccount>("Guest");
+  const user = state.status.status === "ready" ? state.status.user : null;
+  const selected = user ? user.email === "host@demo.velio.test" ? "Host" : user.email === "booker@demo.velio.test" ? "Booker" : "Guest" : pendingSelection;
+  function select(account: DemoAccount) {
+    setPendingSelection(account);
+    store.signOut();
+    onSelect?.(account);
+    if (account !== "Guest") void store.establish({ email: `${account.toLowerCase()}@demo.velio.test` });
+  }
   return <div className="account-access">
-    <div className="tool-toggle" role="group" aria-label="Account shortcuts">
-      {(["Host", "Booker", "Guest"] as const).map(label => <button key={label} type="button" aria-pressed={selected === label} className={selected === label ? "toggle-on" : ""} onClick={() => {
-        setSelected(label);
-        setSigningIn(false);
-        store.signOut();
-        if (label !== "Guest") void store.establish({ email: `${label.toLowerCase()}@demo.velio.test` });
-      }}>{label}</button>)}
+    <span className="demo-label">Demo account</span>
+    <div className="tool-toggle" role="group" aria-label="Demo account">
+      {(["Host", "Booker", "Guest"] as const).map(account => <button key={account} type="button" aria-pressed={selected === account} className={selected === account ? "toggle-on" : ""} onClick={() => select(account)}>{account}</button>)}
     </div>
-    {ready ? <p className="who">{state.status.status === "ready" && state.status.user.displayName} <button type="button" className="button-ghost" onClick={() => { store.signOut(); setSelected("Guest"); setSigningIn(false); }}>Sign out</button></p>
-      : selected === "Guest" ? <button type="button" className="button-ghost" onClick={() => setSigningIn(value => !value)}>Sign in</button> : <p className="hint" role="status">Opening account…</p>}
-    {!ready && state.status.status === "anonymous" && state.status.error && <p role="alert">{state.status.error}</p>}
-    {signingIn && !ready && <IdentityPanel />}
-    <p className="hint">Host and Booker use synthetic demo accounts. Each account can host and book.</p>
+    {user ? <span className="account-name">{user.displayName} <button type="button" className="button-ghost" onClick={() => select("Guest")}>Sign out</button></span>
+      : selected === "Guest" ? <button type="button" className="button-ghost" onClick={onSignIn}>Sign in</button>
+        : <span className="hint" role="status">Opening account…</span>}
+    {state.status.status === "anonymous" && state.status.error && <span role="alert">{state.status.error}</span>}
   </div>;
 }

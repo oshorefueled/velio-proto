@@ -39,6 +39,7 @@ export interface SessionEstablishment {
 }
 
 export interface ActivityView {
+  hostId?: string;
   description?: string;
   id: string;
   title: string;
@@ -356,6 +357,10 @@ export class VelioApi {
     visitId?: string;
   }): Promise<SessionEstablishment> {
     return this.request("POST", "/demo/sessions", { body: input }) as never;
+  }
+
+  getMyBookings(token: string, signal?: AbortSignal): Promise<Array<{ id: string; activityId: string; planId: string; activity: { id: string; title: string; startsAt: string; timezone: string } }>> {
+    return this.request("GET", "/my/bookings", { token, signal }).then(json => (json.bookings ?? []) as never);
   }
 
   getMyActivities(token: string, signal?: AbortSignal): Promise<HostActivityView[]> {

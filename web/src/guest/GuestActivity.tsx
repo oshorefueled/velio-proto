@@ -1,3 +1,4 @@
+import { Participants } from "../host/Participants.js";
 import { formatMoney } from "../money.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { BookingStore, BookingState } from "../booking-store.js";
@@ -212,13 +213,13 @@ export function GuestActivity({
 }): ReactNode {
   const { api, state } = useSession();
   const [detail, setDetail] = useState<ActivityDetailView | null>(null);
-  const [invites, setInvites] = useState<ActivityDetailView["invites"]>();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [validityPending, setValidityPending] = useState(false);
   const generation = useRef(0);
   const sessionToken = state.status.status === "ready" ? state.status.token : null;
+  const isOwner = state.status.status === "ready" && (detail?.hostId ?? detail?.host?.id) === state.status.user.id;
 
   // The controller owns this activity's phase; subscribe for updates.
   const [livePhase, setLivePhase] = useState(() => booking.getState());
@@ -238,10 +239,9 @@ export function GuestActivity({
     setLoadError(null);
     void (async () => {
       try {
-        const { activity, invites: capabilities } = await api.getActivity(activityId);
+        const { activity } = await api.getActivity(activityId, { token: sessionToken });
         if (generation.current !== currentGeneration) return;
         setDetail(activity);
-        setInvites(capabilities);
         setLoading(false);
         setValidityPending(false);
       } catch (err) {
@@ -351,17 +351,7 @@ export function GuestActivity({
       <p className="eyebrow">{detail.started ? "Started" : "Upcoming"}</p>
       <h2 id="guest-detail-heading">{detail.title}</h2>
       <p className="activity-prose">{detail.description}</p>
-      <h3>Itinerary</h3>
-      <p className="activity-prose">{detail.itinerary}</p>
-      <h3>About your host</h3>
-      <p>{detail.host?.summary || "This host has not added a background yet."}</p>
-      <h4>Previous activities</h4>
-      {detail.host?.previousActivities.length ? <ul>{detail.host.previousActivities.map(activity => <li key={activity.id}>{activity.title}</li>)}</ul> : <p className="hint">No previous activities yet.</p>}
       <dl className="detail-grid">
-        <div>
-          <dt>Host</dt>
-          <dd>{detail.hostDisplayName}</dd>
-        </div>
         <div>
           <dt>Starts</dt>
           <dd>
@@ -380,7 +370,14 @@ export function GuestActivity({
         </div>
       </dl>
       {detail.started ? <p className="notice" role="status">Bookings closed — this activity has started.</p> : detail.remainingSpots === 0 ? <p className="notice" role="status">Sold out — every spot is booked.</p> : null}
+      <h3>Itinerary</h3>
+      <p className="activity-prose">{detail.itinerary}</p>
+      <h3>Your host · {detail.hostDisplayName}</h3>
+      <p>{detail.host?.summary || "This host has not added a background yet."}</p>
+      <h4>Previous activities</h4>
+      {detail.host?.previousActivities.length ? <ul>{detail.host.previousActivities.map(activity => <li key={activity.id}>{activity.title}</li>)}</ul> : <p className="hint">No previous activities yet.</p>}
       <LiveStatus live={live} />
+      {isOwner && <Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} />}
       {currentBooking !== null && (
         <BookingControls
           booking={currentBooking}
@@ -395,17 +392,11 @@ export function GuestActivity({
           onNeedIdentity={onRequestIdentity}
         />
       )}
-      {currentBooking?.phase.kind === "confirmed" && (
+      {(isOwner || currentBooking?.phase.kind === "confirmed") && (
         <div className="invite-entry">
           <button type="button" className="button-ghost" onClick={onOpenInvites}>
             Invite someone to this plan
           </button>
-          <p className="hint">
-            {!detail.started && detail.remainingSpots > 0 && invites?.canCreateInvites
-              ? "This plan permits invitations — create a contact vouch or a public share link."
-              : "Invitations are not currently available for this plan."}
-            {" "}Booking stays open here; invitations never reserve a spot.
-          </p>
         </div>
       )}
     </section>

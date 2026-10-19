@@ -92,7 +92,7 @@ const listItem = (id: string) => ({
 const detailOf = (id: string, over: Record<string, unknown> = {}) => ({
   id,
   title: `Activity ${id}`,
-  hostDisplayName: "Host",
+  hostDisplayName: "Host", hostId: "host",
   planId: `plan-${id}`,
   startsAt: "2026-12-01T18:00:00Z",
   timezone: "UTC",
@@ -533,9 +533,9 @@ it("when the owning host opens their detail, the host entry leads to the same in
     { session: hostUser, view: "activity" },
   );
   // The host detail lives in the hidden-by-default host tools; switch first.
-  await click("Host tools");
+  await click("My activities");
   await settle(4);
-  await click("Invite guests to this activity");
+  await click("Invite someone to this plan");
   await settle();
   expect(window.location.href).toContain("view=invites");
   expect(document.body.textContent).toContain("Invitation type");

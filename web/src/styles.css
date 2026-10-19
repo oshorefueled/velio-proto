@@ -554,3 +554,27 @@ textarea { width: 100%; min-height: 6rem; padding: .75rem; border: 1px solid var
 .account-access { max-width: 32rem; }
 .account-access .tool-toggle { display: flex; flex-wrap: nowrap; }
 @media (max-width: 600px) { .masthead-side { width: 100%; } .account-access { width: 100%; } .field-row { grid-template-columns: 1fr; } }
+
+/* Account shortcuts stay separate from everyday navigation. */
+.masthead { align-items: center; justify-content: space-between; padding-bottom: 1.5rem; }
+.masthead h1 { font-size: clamp(1.6rem, 3vw, 2.2rem); margin: 0; }
+.account-access { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .5rem .75rem; max-width: 31rem; }
+.demo-label { color: var(--ink-faint); font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; }
+.account-name { font-size: .85rem; color: var(--ink-soft); }
+.product-nav { max-width: 1180px; margin: 0 auto; padding: 1rem 1.2rem; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.product-nav > button { background: transparent; border: 0; box-shadow: none; color: var(--ink-soft); padding: .65rem .85rem; }
+.product-nav > button[aria-current="page"] { color: var(--ink); background: var(--paper-deep); border-radius: .5rem; }
+.product-nav > .publish-action { margin-left: auto; background: var(--accent); color: white; }
+.selection-intro { padding: 3rem 1.5rem; max-width: 34rem; color: var(--ink-soft); }
+.selection-intro h2 { color: var(--ink); font-size: 2rem; margin: .6rem 0 1rem; }
+.workspace.publishing { display: block; max-width: 800px; }
+.detail-panel > .detail-grid { padding: 1rem 0; border-block: 1px solid var(--rule); margin: 1rem 0 1.5rem; }
+.detail-panel > h3 { margin-top: 1.5rem; }
+@media (max-width: 600px) {
+  .account-access { justify-content: flex-start; max-width: none; }
+  .masthead { gap: 1rem; }
+  .product-nav { gap: .25rem; padding-inline: .8rem; }
+  .product-nav > button { font-size: .82rem; padding: .55rem; }
+  .product-nav > .publish-action { margin-left: 0; }
+  .selection-intro { padding: 1rem .5rem; }
+}
