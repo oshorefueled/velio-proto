@@ -1,0 +1,38 @@
+{
+  "name": "velio-backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": "24.16.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "vitest run --no-file-parallelism",
+    "migrate": "tsx src/db/migrate-cli.ts",
+    "seed:experiment-demo": "tsx scripts/seed-experiment-demo.mts",
+    "cohorts": "tsx scripts/cohorts.mts",
+    "check:startup": "node scripts/startup-check.mjs",
+    "acceptance:load": "tsx scripts/acceptance-load.mts",
+    "acceptance:walkthrough": "tsx scripts/acceptance-walkthrough.mts",
+    "seed:demo": "tsx scripts/seed-demo.mts"
+  },
+  "dependencies": {
+    "@fastify/websocket": "11.2.0",
+    "dotenv": "18.0.8",
+    "fastify": "5.12.7",
+    "ioredis": "5.11.1",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "@types/ws": "8.18.1",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5",
+    "ws": "8.22.0"
+  }
+}

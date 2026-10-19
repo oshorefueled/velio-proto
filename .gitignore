@@ -1,0 +1,11 @@
+# Local development references
+README.md
+Readme.md
+USER_STORIES.md
+SPEC.md
+.tickets/
+# Dependencies, generated output and credentials
+node_modules/
+dist/
+.env
+.scratch/
