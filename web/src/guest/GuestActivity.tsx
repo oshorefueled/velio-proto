@@ -67,15 +67,6 @@ function BookingControls({
               )}
             </dd>
           </div>
-          <div>
-            <dt>Source</dt>
-            <dd>
-              {phase.booking.attribution.rail}
-              {phase.booking.attribution.generation > 0
-                ? ` · generation ${phase.booking.attribution.generation}`
-                : ""}
-            </dd>
-          </div>
         </dl>
         <p className="hint">
           This is the saved record — reopening or refreshing shows it again, even if the

@@ -189,6 +189,9 @@ it("when a booking request is in flight, submit stays disabled and a second clic
   await settle();
   expect(document.body.textContent).toContain("Your spot is saved");
   expect(document.body.textContent).toContain("booking-booker");
+  const receipt = document.querySelector('[aria-label="Saved booking"]')!;
+  expect(receipt.textContent).not.toContain("Source");
+  expect(receipt.textContent).not.toContain("direct");
   expect(postBodies).toHaveLength(1);
 });
 
