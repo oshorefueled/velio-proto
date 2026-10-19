@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Pool } from "pg";
 import { appendEvent } from "../events/append.js";
 import { findInviteForAcquisition } from "../invites/service.js";
-import { InviteExpiredError, InviteNotFoundError, InviteRecipientMismatchError } from "../invites/domain.js";
+import { InviteExpiredError, InviteUsedError, InviteNotFoundError, InviteRecipientMismatchError } from "../invites/domain.js";
 import { linkVisitorIdentity } from "../clientevents/service.js";
 import { validateChannel } from "../clientevents/domain.js";
 import {
@@ -132,11 +132,13 @@ export async function establishIdentity(
       if (input.inviteCode !== undefined) {
         const lookup = await findInviteForAcquisition(client, input.inviteCode, contactKey);
         if (!lookup.ok) {
-          throw lookup.reason === "expired"
-            ? new InviteExpiredError()
-            : lookup.reason === "recipient_mismatch"
-              ? new InviteRecipientMismatchError()
-              : new InviteNotFoundError();
+          throw lookup.reason === "used"
+            ? new InviteUsedError()
+            : lookup.reason === "expired"
+              ? new InviteExpiredError()
+              : lookup.reason === "recipient_mismatch"
+                ? new InviteRecipientMismatchError()
+                : new InviteNotFoundError();
         }
         acquisition = { signupSource: lookup.invite.rail, signupGeneration: lookup.invite.generation };
         signupInviteId = lookup.invite.id;

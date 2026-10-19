@@ -196,18 +196,18 @@ class UserSnapshot {
   const UserSnapshot({
     required this.id,
     required this.displayName,
-    required this.contactKey,
+    required this.email,
   });
   final String id;
   final String displayName;
-  final String contactKey;
+  final String email;
 
   factory UserSnapshot.fromJson(Object? json) {
     final map = (json as Map).cast<String, dynamic>();
     return UserSnapshot(
       id: map['id'] as String,
       displayName: map['displayName'] as String,
-      contactKey: map['contactKey'] as String,
+      email: map['email'] as String,
     );
   }
 }
@@ -266,6 +266,54 @@ class BookingView {
       createdAt: map['createdAt'] as String,
       rail: attribution['rail'] as String,
       generation: (attribution['generation'] as num).toInt(),
+    );
+  }
+}
+
+class SavedBookingSummary {
+  const SavedBookingSummary({
+    required this.id,
+    required this.activityId,
+    required this.planId,
+    required this.title,
+    required this.startsAt,
+    required this.timezone,
+  });
+  final String id;
+  final String activityId;
+  final String planId;
+  final String title;
+  final String startsAt;
+  final String timezone;
+  factory SavedBookingSummary.fromJson(Object? json) {
+    final map = (json as Map).cast<String, dynamic>();
+    final activity = (map['activity'] as Map).cast<String, dynamic>();
+    return SavedBookingSummary(
+      id: map['id'] as String,
+      activityId: map['activityId'] as String,
+      planId: map['planId'] as String,
+      title: activity['title'] as String,
+      startsAt: activity['startsAt'] as String,
+      timezone: activity['timezone'] as String,
+    );
+  }
+}
+
+class ActivityDetails {
+  const ActivityDetails({
+    required this.activity,
+    required this.plan,
+    required this.host,
+  });
+  final InviteActivity activity;
+  final InvitePlan plan;
+  final InviteHost host;
+  factory ActivityDetails.fromJson(Object? json) {
+    final map = (json as Map).cast<String, dynamic>();
+    return ActivityDetails(
+      activity: InviteActivity.fromJson(map['activity']),
+      plan: InvitePlan.fromJson(map['plan']),
+      host: InviteHost.fromJson(map['host']),
     );
   }
 }
@@ -372,7 +420,7 @@ class VelioApi {
   }
 
   Future<SessionEstablishment> establishSession({
-    required String contactKey,
+    required String email,
     String? displayName,
     String? inviteCode,
     required String visitorId,
@@ -382,7 +430,7 @@ class VelioApi {
       'POST',
       '/demo/sessions',
       body: {
-        'email': contactKey,
+        'email': email,
         if (displayName != null && displayName.isNotEmpty)
           'displayName': displayName,
         'inviteCode': ?inviteCode,
@@ -410,6 +458,16 @@ class VelioApi {
     );
     return BookingView.fromJson((json as Map)['booking']);
   }
+
+  Future<List<SavedBookingSummary>> getMyBookings(String token) async {
+    final json = await _send('GET', '/my/bookings', token: token);
+    return ((json as Map)['bookings'] as List)
+        .map(SavedBookingSummary.fromJson)
+        .toList();
+  }
+
+  Future<ActivityDetails> getActivity(String activityId) async =>
+      ActivityDetails.fromJson(await _send('GET', '/activities/$activityId'));
 
   Future<BookingOperationResult> bookActivity(
     String token,

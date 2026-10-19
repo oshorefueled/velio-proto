@@ -137,6 +137,25 @@ describe("public share routes", () => {
     const used = await nextInject(treatmentApp, { method: "GET", url: `/invites/${code}` });
     expect(used.json().invite.state).toBe("used");
     expect(JSON.stringify(used.json())).not.toContain(email);
+    const stranger = await establish(treatmentApp, "Used Invitation Visitor");
+    const refused = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/bookings`,
+      headers: { authorization: `Bearer ${stranger}` }, payload: { operationId: randomUUID(), inviteCode: code } });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({ error: { code: "invite_used" } });
+    expect(JSON.stringify(refused.json())).not.toContain(email);
+    const newEmail = `${uniqueKey("used-new")}@example.test`;
+    const refusedEntry = await nextInject(treatmentApp, { method: "POST", url: "/demo/sessions",
+      payload: { email: newEmail, inviteCode: code } });
+    expect(refusedEntry.statusCode).toBe(409);
+    expect(refusedEntry.json().error.code).toBe("invite_used");
+    await withClient(migrationUrl, async client => {
+      expect((await client.query("SELECT count(*)::int AS n FROM users WHERE contact_key=$1", [newEmail])).rows[0].n).toBe(0);
+      expect((await client.query("SELECT booked_count FROM activities WHERE id=$1", [activityId])).rows[0].booked_count).toBe(1);
+    });
+    const replay = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/bookings`,
+      headers: { authorization: `Bearer ${recipient.json().session.token}` }, payload: { operationId: randomUUID(), inviteCode: code } });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json()).toMatchObject({ created: false, booking: booking.json().booking });
     const publicLink = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/invites`,
       headers: { authorization: `Bearer ${host}` }, payload: { rail: "public_share" } });
     expect(publicLink.statusCode).toBe(201);
@@ -147,6 +166,107 @@ describe("public share routes", () => {
       expect(JSON.stringify(events.rows)).not.toContain(email);
     });
   });
+
+  for (const rail of ["vouch", "public_share"] as const) {
+    it(`${rail}: email checkout preserves acquisition across return access, independent bookings and a later invitation generation`, async () => {
+      const host = await establish(treatmentApp, "Checkout Host");
+      const activityId = await publish(treatmentApp, host, "Email checkout", 4);
+      const email = `${uniqueKey("checkout")}+friend@example.test`;
+      const visitorId = randomUUID();
+      const visitId = randomUUID();
+      const inviteResponse = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/invites`,
+        headers: { authorization: `Bearer ${host}` }, payload: { rail, ...(rail === "vouch" ? { recipientEmail: email } : {}) } });
+      expect(inviteResponse.statusCode).toBe(201);
+      const invite = inviteResponse.json().invite;
+      await nextInject(treatmentApp, { method: "GET", url: `/invites/${invite.code}` });
+      await withClient(migrationUrl, async client => {
+        expect((await client.query("SELECT count(*)::int AS n FROM events WHERE invite_id=$1 AND event_name='invite_opened'", [invite.id])).rows[0].n).toBe(0);
+      });
+      const started = await nextInject(treatmentApp, { method: "POST", url: "/client-events",
+        payload: { type: "claim_started", eventId: randomUUID(), visitorId, visitId, channel: "flutter", inviteCode: invite.code } });
+      expect(started.statusCode).toBe(200);
+      await withClient(migrationUrl, async client => {
+        expect((await client.query("SELECT count(*)::int AS n FROM users WHERE contact_key=$1", [email])).rows[0].n).toBe(0);
+        expect((await client.query("SELECT booked_count FROM activities WHERE id=$1", [activityId])).rows[0].booked_count).toBe(0);
+      });
+      if (rail === "vouch") {
+        const wrongEmail = `${uniqueKey("wrong")}@example.test`;
+        const mismatch = await nextInject(treatmentApp, { method: "POST", url: "/demo/sessions",
+          payload: { email: wrongEmail, inviteCode: invite.code, visitorId, visitId, channel: "flutter" } });
+        expect(mismatch.statusCode).toBe(403);
+        expect(mismatch.json().error.code).toBe("invite_recipient_mismatch");
+        await withClient(migrationUrl, async client => {
+          expect((await client.query("SELECT count(*)::int AS n FROM users WHERE contact_key=$1", [wrongEmail])).rows[0].n).toBe(0);
+        });
+      }
+      const entry = await nextInject(treatmentApp, { method: "POST", url: "/demo/sessions",
+        payload: { email: `  ${email.toUpperCase()}  `, inviteCode: invite.code, visitorId, visitId, channel: "flutter" } });
+      expect(entry.statusCode).toBe(200);
+      expect(entry.json()).toMatchObject({ created: true, user: { email, signupSource: rail, signupGeneration: 1 } });
+      const user = entry.json().user;
+      const token = entry.json().session.token;
+      const claimed = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/bookings`,
+        headers: { authorization: `Bearer ${token}` }, payload: { operationId: randomUUID(), inviteCode: invite.code } });
+      expect(claimed.statusCode).toBe(201);
+      expect(claimed.json()).toMatchObject({ created: true, booking: { userId: user.id, activityId, planId: invite.planId, attribution: { rail, generation: 1 } } });
+
+      // Independent access uses the same email, without an invitation.
+      const returning = await nextInject(treatmentApp, { method: "POST", url: "/demo/sessions", payload: { email } });
+      expect(returning.json()).toMatchObject({ created: false, user: { id: user.id, signupSource: rail, signupGeneration: 1 } });
+      const returnedToken = returning.json().session.token;
+      const list = await nextInject(treatmentApp, { method: "GET", url: "/my/bookings", headers: { authorization: `Bearer ${returnedToken}` } });
+      expect(list.json().bookings).toEqual([{ id: claimed.json().booking.id, activityId, planId: invite.planId,
+        activity: expect.objectContaining({ id: activityId, title: "Email checkout", timezone: "UTC" }) }]);
+      const details = await nextInject(treatmentApp, { method: "GET", url: `/activities/${activityId}` });
+      expect(details.json()).toMatchObject({ plan: { id: invite.planId, itinerary: "Meet, explore, return." }, host: { displayName: "Checkout Host" } });
+      const receipt = await nextInject(treatmentApp, { method: "GET", url: `/activities/${activityId}/bookings/me`, headers: { authorization: `Bearer ${returnedToken}` } });
+      expect(receipt.json().booking).toEqual(claimed.json().booking);
+
+      // Acquisition and each booking are independent immutable sources.
+      const anotherActivity = await publish(treatmentApp, host, "Another plan");
+      const anotherInviteResponse = await nextInject(treatmentApp, { method: "POST", url: `/activities/${anotherActivity}/invites`,
+        headers: { authorization: `Bearer ${host}` }, payload: { rail, ...(rail === "vouch" ? { recipientEmail: email } : {}) } });
+      const anotherInvite = anotherInviteResponse.json().invite;
+      const laterBooking = await nextInject(treatmentApp, { method: "POST", url: `/activities/${anotherActivity}/bookings`,
+        headers: { authorization: `Bearer ${returnedToken}` }, payload: { operationId: randomUUID(), inviteCode: anotherInvite.code } });
+      expect(laterBooking.statusCode).toBe(201);
+
+      const nextEmail = `${uniqueKey("generation2")}@example.test`;
+      const nextInviteResponse = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/invites`,
+        headers: { authorization: `Bearer ${returnedToken}` }, payload: { rail, ...(rail === "vouch" ? { recipientEmail: nextEmail } : {}) } });
+      expect(nextInviteResponse.statusCode).toBe(201);
+      const nextInvite = nextInviteResponse.json().invite;
+      expect(nextInvite.generation).toBe(2);
+      const nextEntry = await nextInject(treatmentApp, { method: "POST", url: "/demo/sessions", payload: { email: nextEmail, inviteCode: nextInvite.code } });
+      expect(nextEntry.json().user).toMatchObject({ signupSource: rail, signupGeneration: 2 });
+      const nextBooking = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/bookings`,
+        headers: { authorization: `Bearer ${nextEntry.json().session.token}` }, payload: { operationId: randomUUID(), inviteCode: nextInvite.code } });
+      expect(nextBooking.statusCode).toBe(201);
+      expect(nextBooking.json().booking.attribution).toEqual({ rail, generation: 2 });
+      if (rail === "public_share") {
+        // The same public code remains reusable by another eligible account.
+        const reuse = await establish(treatmentApp, "Public Returning Account");
+        const reused = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/bookings`,
+          headers: { authorization: `Bearer ${reuse}` }, payload: { operationId: randomUUID(), inviteCode: invite.code } });
+        expect(reused.statusCode).toBe(201);
+      }
+      await withClient(migrationUrl, async client => {
+        const acquisition = await client.query("SELECT signup_invite_id, signup_source, signup_generation FROM users WHERE id=$1", [user.id]);
+        expect(acquisition.rows[0]).toEqual({ signup_invite_id: invite.id, signup_source: rail, signup_generation: 1 });
+        const sources = await client.query("SELECT ba.invite_id, ba.inviter_id, b.activity_id, b.plan_id FROM booking_attributions ba JOIN bookings b ON b.id=ba.booking_id WHERE booking_id = ANY($1::uuid[]) ORDER BY invite_id", [[claimed.json().booking.id, laterBooking.json().booking.id]]);
+        expect(sources.rows).toEqual(expect.arrayContaining([
+          expect.objectContaining({ invite_id: invite.id, activity_id: activityId, plan_id: invite.planId }),
+          expect.objectContaining({ invite_id: anotherInvite.id, activity_id: anotherActivity, plan_id: anotherInvite.planId }),
+        ]));
+        const observations = await client.query("SELECT event_name, user_id, visitor_id, channel, details FROM events WHERE visitor_id=$1 ORDER BY occurred_at", [visitorId]);
+        expect(observations.rows).toEqual(expect.arrayContaining([
+          expect.objectContaining({ event_name: "claim_started", user_id: null, visitor_id: visitorId, channel: "flutter", details: expect.objectContaining({ visitId }) }),
+          expect.objectContaining({ event_name: "account_entry_completed", user_id: user.id, visitor_id: visitorId, channel: "flutter", details: expect.objectContaining({ visitId, mode: "created" }) }),
+        ]));
+        expect((await client.query("SELECT count(*)::int AS n FROM events WHERE event_name='user_created' AND user_id=$1", [user.id])).rows[0].n).toBe(1);
+      });
+    });
+  }
 
   it("returns one public invitation and creation event for concurrent copies, including retrieval with creation disabled", async () => {
     const host = await establish(treatmentApp, "Reusable Host");

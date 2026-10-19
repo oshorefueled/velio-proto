@@ -383,7 +383,7 @@ export async function buildBookingHealth(
             (outcomes.started ?? 0) +
             (outcomes.invite_not_found ?? 0) +
             (outcomes.invite_expired ?? 0) +
-            (outcomes.invite_recipient_mismatch ?? 0),
+            (outcomes.invite_recipient_mismatch ?? 0) + (outcomes.invite_used ?? 0),
           quotaRejections: outcomes.rate_limited ?? 0,
         },
       },

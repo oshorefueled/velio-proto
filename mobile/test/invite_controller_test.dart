@@ -90,9 +90,18 @@ class Harness {
   Future<StoredDevice> device() => controller.store.load();
 
   void addIdentity() {
+    transport.responses['GET /my/bookings'] = {'bookings': []};
+    transport.responses['GET /activities/a1/bookings/me'] = transport.errorBody(
+      'booking_not_found',
+    );
+    transport.statusOverrides['GET /activities/a1/bookings/me'] = 404;
     transport.responses['POST /demo/sessions'] = jsonOf({
       'session': {'token': 'tok-1', 'expiresAt': '2027-01-01T00:00:00Z'},
-      'user': {'id': 'u1', 'contactKey': 'guest', 'displayName': 'Guest'},
+      'user': {
+        'id': 'u1',
+        'email': 'guest@example.test',
+        'displayName': 'Guest',
+      },
       'created': true,
     });
   }
@@ -103,7 +112,10 @@ class Harness {
       code: '2VKA1RPZ90S6',
     );
     await controller.openCode('2VKA1RPZ90S6');
-    await controller.selectIdentity(contactKey: 'guest', displayName: 'Guest');
+    await controller.selectIdentity(
+      email: 'guest@example.test',
+      displayName: 'Guest',
+    );
   }
 }
 
@@ -161,14 +173,14 @@ void main() {
     expect(harness.controller.preview!.code, 'CODEBBBB');
   });
 
-  test('identity persists, resumes through bootstrap, and an expired credential drops without losing the code', () async {
+  test('a persisted account resumes and an expired credential restores the same email without losing the code', () async {
     final harness = Harness();
     harness.transport.responses['GET /invites/2VKA1RPZ90S6'] = harness.transport
         .previewBody(code: '2VKA1RPZ90S6');
     harness.addIdentity();
     await harness.controller.openCode('2VKA1RPZ90S6');
     await harness.controller.selectIdentity(
-      contactKey: 'guest',
+      email: 'guest@example.test',
       displayName: 'Guest',
     );
     expect(harness.controller.session!.token, 'tok-1');
@@ -181,7 +193,11 @@ void main() {
       store: harness.controller.store,
     );
     harness.transport.responses['GET /demo/me'] = jsonOf({
-      'user': {'id': 'u1', 'contactKey': 'guest', 'displayName': 'Guest'},
+      'user': {
+        'id': 'u1',
+        'email': 'guest@example.test',
+        'displayName': 'Guest',
+      },
     });
     await resumed.bootstrap();
     expect(resumed.session!.token, 'tok-1');
@@ -199,7 +215,7 @@ void main() {
       'session_expired',
     );
     await invalid.bootstrap();
-    expect(invalid.session, isNull);
+    expect(invalid.session!.email, 'guest@example.test');
     expect(invalid.code, '2VKA1RPZ90S6');
   });
 
@@ -313,6 +329,9 @@ void main() {
       await harness.controller.claim();
       expect(harness.controller.claimState, isA<ClaimUnknown>());
       harness.transport.errors.remove('GET /activities/a1/bookings/me');
+      harness.transport.statusOverrides.remove(
+        'GET /activities/a1/bookings/me',
+      );
       harness.transport.responses['GET /activities/a1/bookings/me'] = harness
           .transport
           .bookingBody();
@@ -355,11 +374,15 @@ void main() {
     final inFlight = harness.controller.claim();
     harness.transport.responses['POST /demo/sessions'] = jsonOf({
       'session': {'token': 'tok-2', 'expiresAt': '2027-01-01T00:00:00Z'},
-      'user': {'id': 'u2', 'contactKey': 'second', 'displayName': 'Second'},
+      'user': {
+        'id': 'u2',
+        'email': 'second@example.test',
+        'displayName': 'Second',
+      },
       'created': false,
     });
     await harness.controller.selectIdentity(
-      contactKey: 'second',
+      email: 'second@example.test',
       displayName: 'Second',
     );
     expect(harness.controller.session!.token, 'tok-2');
@@ -408,11 +431,12 @@ void main() {
         .previewBody(code: 'EXPRDCODE1', state: 'expired');
     harness.addIdentity();
     await harness.controller.openCode('EXPRDCODE1');
+    harness.transport.statusOverrides.remove('GET /activities/a1/bookings/me');
     harness.transport.responses['GET /activities/a1/bookings/me'] = harness
         .transport
         .bookingBody();
     await harness.controller.selectIdentity(
-      contactKey: 'guest',
+      email: 'guest@example.test',
       displayName: 'Guest',
     );
     expect(
@@ -421,11 +445,14 @@ void main() {
       reason: 'the saved receipt wins even though the invite is expired',
     );
 
-    harness.transport.responses['POST /activities/a1/bookings'] = harness
+    final mismatch = Harness();
+    await mismatch.openAndSelect();
+    mismatch.transport.statusOverrides['POST /activities/a1/bookings'] = 403;
+    mismatch.transport.responses['POST /activities/a1/bookings'] = mismatch
         .transport
         .errorBody('invite_recipient_mismatch');
-    await harness.controller.claim();
-    final phase = harness.controller.claimState as ClaimRefused;
+    await mismatch.controller.claim();
+    final phase = mismatch.controller.claimState as ClaimRefused;
     expect(phase.reason, 'invite-mismatch');
     expect(phase.message.contains('another email'), true);
   });

@@ -299,7 +299,8 @@ export type InviteClaimLookup =
   | { ok: true; invite: InviteSnapshot }
   | { ok: false; reason: "not_found" }
   | { ok: false; reason: "expired" }
-  | { ok: false; reason: "recipient_mismatch" };
+  | { ok: false; reason: "recipient_mismatch" }
+  | { ok: false; reason: "used" };
 
 /**
  * Claim-side lookup for the booking transaction: the invite must exist,
@@ -319,10 +320,13 @@ export async function findInviteForClaim(
   if (normalized === null) {
     return { ok: false, reason: "not_found" };
   }
-  const result = await executor.query<InviteRow & { expired: boolean; target_contact_key: string | null }>(
+  const result = await executor.query<InviteRow & { expired: boolean; used: boolean; target_contact_key: string | null }>(
     `SELECT id, code, rail, creator_id, activity_id, plan_id, generation,
             expires_at, created_at, target_contact_key,
-            expires_at <= clock_timestamp() AS expired
+            expires_at <= clock_timestamp() AS expired,
+            rail = 'vouch' AND EXISTS (
+              SELECT 1 FROM booking_attributions WHERE invite_id = invites.id AND rail = 'vouch'
+            ) AS used
      FROM invites
      WHERE code = $1 AND activity_id = $2`,
     [normalized, activityId],
@@ -330,6 +334,9 @@ export async function findInviteForClaim(
   const row = result.rows[0];
   if (!row) {
     return { ok: false, reason: "not_found" };
+  }
+  if (row.used) {
+    return { ok: false, reason: "used" };
   }
   if (row.expired) {
     return { ok: false, reason: "expired" };
@@ -357,7 +364,8 @@ export type InviteAcquisitionLookup =
   | { ok: true; invite: InviteSnapshot }
   | { ok: false; reason: "not_found" }
   | { ok: false; reason: "expired" }
-  | { ok: false; reason: "recipient_mismatch" };
+  | { ok: false; reason: "recipient_mismatch" }
+  | { ok: false; reason: "used" };
 
 /**
  * Signup-side lookup for the identity transaction: the first valid invite
@@ -375,10 +383,13 @@ export async function findInviteForAcquisition(
   if (normalized === null) {
     return { ok: false, reason: "not_found" };
   }
-  const result = await executor.query<InviteRow & { expired: boolean; target_contact_key: string | null }>(
+  const result = await executor.query<InviteRow & { expired: boolean; used: boolean; target_contact_key: string | null }>(
     `SELECT id, code, rail, creator_id, activity_id, plan_id, generation,
             expires_at, created_at, target_contact_key,
-            expires_at <= clock_timestamp() AS expired
+            expires_at <= clock_timestamp() AS expired,
+            rail = 'vouch' AND EXISTS (
+              SELECT 1 FROM booking_attributions WHERE invite_id = invites.id AND rail = 'vouch'
+            ) AS used
      FROM invites
      WHERE code = $1`,
     [normalized],
@@ -386,6 +397,9 @@ export async function findInviteForAcquisition(
   const row = result.rows[0];
   if (!row) {
     return { ok: false, reason: "not_found" };
+  }
+  if (row.used) {
+    return { ok: false, reason: "used" };
   }
   if (row.expired) {
     return { ok: false, reason: "expired" };

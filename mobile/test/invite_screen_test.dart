@@ -17,9 +17,11 @@ Object jsonOf(Object raw) => raw is String ? jsonDecode(raw) : raw;
 
 class FakeTransport {
   final responses = <String, Object>{};
+  final requests = <({String method, String path, String? body})>[];
   final statusOverrides = <String, int>{};
 
   Transport build() => (method, path, {body, token}) async {
+    requests.add((method: method, path: path, body: body));
     final key = '$method $path';
     final json = responses[key];
     if (json != null) {
@@ -68,6 +70,191 @@ Future<InviteController> mountedController(
 
 void main() {
   setUpAll(tzdata.initializeTimeZones);
+
+  testWidgets(
+    'a signed-out guest reviews checkout and signs in before explicitly confirming one spot',
+    (tester) async {
+      final transport = FakeTransport();
+      transport.responses['GET /invites/CODEAAAA'] = transport.previewBody(
+        code: 'CODEAAAA',
+      );
+      transport.responses['POST /demo/sessions'] = {
+        'session': {'token': 'tok', 'expiresAt': '2027-01-01T00:00:00Z'},
+        'user': {
+          'id': 'u1',
+          'email': 'guest@example.test',
+          'displayName': 'Guest',
+        },
+        'created': false,
+      };
+      transport.responses['GET /my/bookings'] = {'bookings': []};
+      transport.statusOverrides['GET /activities/a1/bookings/me'] = 404;
+      transport.responses['GET /activities/a1/bookings/me'] = transport
+          .errorBody('booking_not_found');
+      transport.responses['POST /activities/a1/bookings'] = transport
+          .claimBody();
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final controller = await mountedController(tester, transport: transport);
+      await controller.openCode('CODEAAAA');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('claim')), findsNothing);
+      await tester.tap(find.byKey(const Key('continue-checkout')));
+      await tester.pumpAndSettle();
+      expect(find.text('Review your booking'), findsOneWidget);
+      expect(find.text('1 spot'), findsOneWidget);
+      expect(find.textContaining('EUR'), findsWidgets);
+      await tester.enterText(
+        find.byKey(const Key('contact-field')),
+        'guest@example.test',
+      );
+      await tester.tap(find.byKey(const Key('select-identity')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('contact-field')), findsNothing);
+      expect(
+        transport.requests.where(
+          (r) => r.method == 'POST' && r.path.endsWith('/bookings'),
+        ),
+        isEmpty,
+      );
+      transport.responses['GET /my/bookings'] = {
+        'bookings': [
+          {
+            'id': 'b1',
+            'activityId': 'a1',
+            'planId': 'p1',
+            'activity': {
+              'id': 'a1',
+              'title': 'Evening walk',
+              'startsAt': '2026-12-01T18:00:00Z',
+              'timezone': 'Europe/Stockholm',
+            },
+          },
+        ],
+      };
+      await tester.tap(find.byKey(const Key('claim')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Your spot is saved'), findsOneWidget);
+      expect(find.byKey(const Key('saved-booking-b1')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'independent Sign in opens a saved plan without an invitation and Sign out clears its details',
+    (tester) async {
+      final transport = FakeTransport();
+      transport.responses['POST /demo/sessions'] = {
+        'session': {'token': 'tok', 'expiresAt': '2027-01-01T00:00:00Z'},
+        'user': {
+          'id': 'u1',
+          'email': 'guest@example.test',
+          'displayName': 'Guest',
+        },
+        'created': false,
+      };
+      transport.responses['GET /my/bookings'] = {
+        'bookings': [
+          {
+            'id': 'b1',
+            'activityId': 'a1',
+            'planId': 'p1',
+            'activity': {
+              'id': 'a1',
+              'title': 'Evening walk',
+              'startsAt': '2026-12-01T18:00:00Z',
+              'timezone': 'Europe/Stockholm',
+            },
+          },
+        ],
+      };
+      final invite =
+          jsonDecode(transport.previewBody(code: 'CODEAAAA'))['invite'] as Map;
+      transport.responses['GET /activities/a1'] = {
+        'activity': invite['activity'],
+        'plan': invite['plan'],
+        'host': invite['host'],
+      };
+      transport.responses['GET /activities/a1/bookings/me'] =
+          (jsonDecode(transport.claimBody()) as Map)..remove('created');
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final controller = await mountedController(tester, transport: transport);
+      await tester.tap(find.byKey(const Key('independent-sign-in')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('contact-field')),
+        'guest@example.test',
+      );
+      await tester.tap(find.byKey(const Key('select-identity')));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved bookings'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('saved-booking-b1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Meet at the bridge.'), findsOneWidget);
+      expect(find.textContaining('River Host'), findsOneWidget);
+      expect(controller.code, isNull);
+      await tester.tap(find.byKey(const Key('switch-identity')));
+      await tester.pumpAndSettle();
+      expect(find.text('Meet at the bridge.'), findsNothing);
+      expect(
+        transport.requests.where(
+          (r) => r.method == 'POST' && r.path.endsWith('/bookings'),
+        ),
+        isEmpty,
+      );
+    },
+  );
+
+  testWidgets(
+    'an expired invitation retains Check again while saved access is unknown and then renders the recovered booking',
+    (tester) async {
+      final transport = FakeTransport();
+      transport.responses['POST /demo/sessions'] = {
+        'session': {'token': 'tok', 'expiresAt': '2027-01-01T00:00:00Z'},
+        'user': {
+          'id': 'u1',
+          'email': 'guest@example.test',
+          'displayName': 'Guest',
+        },
+        'created': false,
+      };
+      transport.responses['GET /my/bookings'] = {'bookings': []};
+      transport.responses['GET /invites/EXPRDCODE1'] = transport.previewBody(
+        code: 'EXPRDCODE1',
+        state: 'expired',
+      );
+      transport.statusOverrides['GET /activities/a1/bookings/me'] = 503;
+      transport.responses['GET /activities/a1/bookings/me'] = transport
+          .errorBody('server_error');
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final controller = await mountedController(tester, transport: transport);
+      await controller.selectIdentity(
+        email: 'guest@example.test',
+        independent: true,
+      );
+      await controller.openCode('EXPRDCODE1');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('check-again')), findsOneWidget);
+      transport.statusOverrides['GET /activities/a1/bookings/me'] = 200;
+      transport.responses['GET /activities/a1/bookings/me'] = jsonDecode(
+        transport.claimBody(created: false),
+      );
+      await tester.tap(find.byKey(const Key('check-again')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Your spot is saved'), findsOneWidget);
+      expect(controller.consumeSuccessHaptic(), false);
+      expect(
+        transport.requests.where(
+          (r) => r.method == 'POST' && r.path.endsWith('/bookings'),
+        ),
+        isEmpty,
+      );
+    },
+  );
 
   for (final sample in [
     (currency: 'JPY', minorUnits: 1200, expected: '¥1,200'),
@@ -231,7 +418,11 @@ void main() {
       );
       transport.responses['POST /demo/sessions'] = jsonOf({
         'session': {'token': 'tok-1', 'expiresAt': '2027-01-01T00:00:00Z'},
-        'user': {'id': 'u1', 'contactKey': 'guest', 'displayName': 'Guest'},
+        'user': {
+          'id': 'u1',
+          'email': 'guest@example.test',
+          'displayName': 'Guest',
+        },
         'created': true,
       });
       transport.responses['POST /activities/a1/bookings'] = transport.claimBody(
@@ -250,7 +441,13 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('open-code')));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('contact-field')), 'guest');
+      await tester.ensureVisible(find.byKey(const Key('continue-checkout')));
+      await tester.tap(find.byKey(const Key('continue-checkout')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('contact-field')),
+        'guest@example.test',
+      );
       await tester.tap(find.byKey(const Key('select-identity')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('claim')));
@@ -264,6 +461,69 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(haptics, hasLength(1));
+      final controller = tester
+          .widget<InviteScreen>(find.byType(InviteScreen))
+          .controller;
+      transport.responses['GET /invites/CODEBBBB'] = transport.previewBody(
+        code: 'CODEBBBB',
+        activityId: 'a2',
+      );
+      transport.statusOverrides['GET /activities/a2/bookings/me'] = 404;
+      transport.responses['GET /activities/a2/bookings/me'] = transport
+          .errorBody('booking_not_found');
+      final second = jsonDecode(transport.claimBody()) as Map;
+      second['booking']['id'] = 'b2';
+      second['booking']['activityId'] = 'a2';
+      transport.responses['POST /activities/a2/bookings'] = second;
+      await controller.openCode('CODEBBBB');
+      controller.continueToCheckout();
+      await controller.claim();
+      await tester.pumpAndSettle();
+      expect(haptics, hasLength(2));
+      await tester.pump();
+      expect(haptics, hasLength(2));
+      transport.statusOverrides.remove('GET /activities/a2/bookings/me');
+      transport.responses['GET /activities/a2/bookings/me'] = {
+        'booking': second['booking'],
+      };
+      await controller.openCode('CODEBBBB');
+      await tester.pumpAndSettle();
+      expect(haptics, hasLength(2));
+    },
+  );
+
+  testWidgets(
+    'Sign out clears the email so the next person starts with an empty field',
+    (tester) async {
+      final transport = FakeTransport();
+      transport.responses['POST /demo/sessions'] = {
+        'session': {'token': 'tok', 'expiresAt': '2027-01-01T00:00:00Z'},
+        'user': {
+          'id': 'u1',
+          'email': 'guest@example.test',
+          'displayName': 'Guest',
+        },
+        'created': false,
+      };
+      transport.responses['GET /my/bookings'] = {'bookings': []};
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await mountedController(tester, transport: transport);
+      await tester.tap(find.byKey(const Key('independent-sign-in')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('contact-field')),
+        'guest@example.test',
+      );
+      await tester.tap(find.byKey(const Key('select-identity')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('switch-identity')));
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(
+        find.byKey(const Key('contact-field')),
+      );
+      expect(field.controller!.text, isEmpty);
     },
   );
 }

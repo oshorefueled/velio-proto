@@ -24,7 +24,7 @@ class _InviteScreenState extends State<InviteScreen> {
   final _codeField = TextEditingController();
   final _contactField = TextEditingController();
   String? _displayedCode;
-  bool _hapticFiredForConfirmation = false;
+  bool _independentSignIn = false;
 
   @override
   void initState() {
@@ -50,17 +50,10 @@ class _InviteScreenState extends State<InviteScreen> {
       _displayedCode = widget.controller.code;
       _codeField.text = _displayedCode ?? '';
     }
-    // Post-frame: telemetry observes only displayed facts, and the success
-    // haptic fires once through the platform channel at the confirmation.
+    // Telemetry observes displayed preview facts after the frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       widget.controller.notePreviewDisplayed();
-      if (!_hapticFiredForConfirmation &&
-          widget.controller.consumeSuccessHaptic()) {
-        _hapticFiredForConfirmation = true;
-        // One permitted success haptic; the SDK selects the exact impact call.
-        HapticFeedback.mediumImpact();
-      }
     });
     setState(() {});
   }
@@ -74,6 +67,25 @@ class _InviteScreenState extends State<InviteScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (!controller.checkout && controller.session != null)
+              _IdentityCard(
+                controller: controller,
+                contactField: _contactField,
+              ),
+            if (controller.session == null && !controller.checkout) ...[
+              TextButton(
+                key: const Key('independent-sign-in'),
+                onPressed: () =>
+                    setState(() => _independentSignIn = !_independentSignIn),
+                child: const Text('Sign in to saved bookings'),
+              ),
+              if (_independentSignIn)
+                _IdentityCard(
+                  controller: controller,
+                  contactField: _contactField,
+                  independent: true,
+                ),
+            ],
             Row(
               children: [
                 Expanded(
@@ -131,15 +143,57 @@ class _InviteScreenState extends State<InviteScreen> {
               ),
             if (controller.preview != null)
               _PreviewCard(controller: controller),
-            const SizedBox(height: 16),
-            if (controller.preview != null)
-              _IdentityCard(
-                controller: controller,
-                contactField: _contactField,
+            if (controller.preview != null &&
+                !controller.checkout &&
+                controller.claimState is! ClaimConfirmed &&
+                controller.preview!.state == 'claimable')
+              FilledButton(
+                key: const Key('continue-checkout'),
+                onPressed: controller.continueToCheckout,
+                child: const Text('Continue to checkout'),
               ),
-            const SizedBox(height: 16),
-            if (controller.session != null && controller.preview != null)
+            if (controller.preview != null && controller.checkout)
+              Card(
+                key: const Key('checkout-review'),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Review your booking',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      Text(controller.preview!.activity.title),
+                      Text(
+                        _formatInZone(
+                          controller.preview!.activity.startsAt,
+                          controller.preview!.activity.timezone,
+                        ),
+                      ),
+                      const Text('1 spot'),
+                      Text(
+                        '${_formatPrice(controller.preview!.activity.priceMinorUnits, controller.preview!.activity.currency)} ${controller.preview!.activity.currency}',
+                      ),
+                      _IdentityCard(
+                        controller: controller,
+                        contactField: _contactField,
+                      ),
+                      if (controller.session != null)
+                        _ClaimCard(controller: controller),
+                    ],
+                  ),
+                ),
+              ),
+            if (controller.session != null &&
+                controller.preview != null &&
+                !controller.checkout &&
+                (controller.claimState is ClaimConfirmed ||
+                    controller.claimState is ClaimUnknown ||
+                    controller.claimState is ClaimChecking))
               _ClaimCard(controller: controller),
+            if (controller.session != null)
+              _SavedBookingsCard(controller: controller),
           ],
         ),
       ),
@@ -225,10 +279,15 @@ class _PreviewCard extends StatelessWidget {
 }
 
 class _IdentityCard extends StatelessWidget {
-  const _IdentityCard({required this.controller, required this.contactField});
+  const _IdentityCard({
+    required this.controller,
+    required this.contactField,
+    this.independent = false,
+  });
 
   final InviteController controller;
   final TextEditingController contactField;
+  final bool independent;
 
   @override
   Widget build(BuildContext context) {
@@ -271,7 +330,8 @@ class _IdentityCard extends StatelessWidget {
                     onPressed: controller.identityBusy
                         ? null
                         : () => controller.selectIdentity(
-                            contactKey: contactField.text,
+                            email: contactField.text,
+                            independent: independent,
                           ),
                     child: Text(
                       controller.identityBusy ? 'Signing in…' : 'Sign in',
@@ -285,10 +345,30 @@ class _IdentityCard extends StatelessWidget {
               )
             : Row(
                 children: [
-                  Expanded(child: Text('Signed in as ${session.displayName}')),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Signed in as ${session.displayName}'),
+                        if (session.email != null) Text(session.email!),
+                        if (controller.identityBusy)
+                          const Text('Restoring account access…'),
+                        if (controller.identityError != null) ...[
+                          Text(controller.identityError!),
+                          TextButton(
+                            onPressed: controller.restoreAccess,
+                            child: const Text('Retry account access'),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                   TextButton(
                     key: const Key('switch-identity'),
-                    onPressed: controller.signOut,
+                    onPressed: () {
+                      contactField.clear();
+                      controller.signOut();
+                    },
                     child: const Text('Sign out'),
                   ),
                 ],
@@ -306,6 +386,14 @@ class _ClaimCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final phase = controller.claimState;
+    if (phase is ClaimConfirmed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted || !identical(controller.claimState, phase)) {
+          return;
+        }
+        if (controller.consumeSuccessHaptic()) HapticFeedback.mediumImpact();
+      });
+    }
     final preview = controller.preview!;
     final claimable =
         preview.state == 'claimable' && preview.activity.remainingSpots > 0;
@@ -391,13 +479,13 @@ class _ClaimCard extends StatelessWidget {
                   onPressed: !claimable ? null : () => controller.claim(),
                   child: Text(
                     claimable
-                        ? 'Try claiming again'
+                        ? 'Confirm booking again'
                         : 'Claiming is unavailable right now',
                   ),
                 ),
               if (phase.reason == 'absent')
                 const Text(
-                  'A retry books again with the same request identity once eligibility is confirmed. Nothing is sent automatically.',
+                  'Eligibility has been refreshed. Confirm again when you are ready.',
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
             ],
@@ -409,8 +497,12 @@ class _ClaimCard extends StatelessWidget {
                     children: [
                       FilledButton(
                         key: const Key('claim'),
-                        onPressed: () => controller.claim(),
-                        child: const Text('Claim your spot'),
+                        onPressed:
+                            controller.identityBusy ||
+                                controller.identityError != null
+                            ? null
+                            : () => controller.claim(),
+                        child: const Text('Confirm booking'),
                       ),
                       const Text(
                         'One spot is reserved only after the server saves your booking.',
@@ -425,6 +517,79 @@ class _ClaimCard extends StatelessWidget {
                     style: const TextStyle(color: Colors.black54),
                   ),
         },
+      ),
+    );
+  }
+}
+
+class _SavedBookingsCard extends StatelessWidget {
+  const _SavedBookingsCard({required this.controller});
+  final InviteController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final details = controller.savedDetails;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Saved bookings',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            TextButton(
+              onPressed: controller.savedBusy
+                  ? null
+                  : controller.loadSavedBookings,
+              child: const Text('Refresh saved bookings'),
+            ),
+            if (controller.savedBusy) const LinearProgressIndicator(),
+            if (controller.savedError != null) Text(controller.savedError!),
+            if (!controller.savedBusy &&
+                controller.savedError == null &&
+                controller.savedBookings.isEmpty)
+              const Text('No saved bookings yet.'),
+            for (final booking in controller.savedBookings)
+              ListTile(
+                key: Key('saved-booking-${booking.id}'),
+                title: Text(booking.title),
+                subtitle: Text(
+                  _formatInZone(booking.startsAt, booking.timezone),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => controller.openSavedBooking(booking),
+              ),
+            if (details != null && controller.savedReceipt != null) ...[
+              const Divider(),
+              Text(
+                details.activity.title,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              Text('Booking ${controller.savedReceipt!.id} · 1 spot saved'),
+              Text(
+                _formatInZone(
+                  details.activity.startsAt,
+                  details.activity.timezone,
+                ),
+              ),
+              Text(
+                '${_formatPrice(details.activity.priceMinorUnits, details.activity.currency)} ${details.activity.currency}',
+              ),
+              Text(details.activity.description),
+              const Text(
+                'Shared plan',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              Text(details.plan.itinerary),
+              Text('Your host: ${details.host.displayName}'),
+              Text(details.host.summary),
+              for (final previous in details.host.previousActivities)
+                Text(previous.title),
+            ],
+          ],
+        ),
       ),
     );
   }

@@ -161,7 +161,7 @@ void main() {
               'session': {'token': 'tok', 'expiresAt': '2027-01-01T00:00:00Z'},
               'user': {
                 'id': 'u1',
-                'contactKey': 'guest',
+                'email': 'guest@example.test',
                 'displayName': 'Guest',
                 'signupSource': 'public_share',
                 'signupGeneration': 2,
@@ -173,13 +173,17 @@ void main() {
         return TransportResponse(
           status: 200,
           json: {
-            'user': {'id': 'u1', 'contactKey': 'guest', 'displayName': 'Guest'},
+            'user': {
+              'id': 'u1',
+              'email': 'guest@example.test',
+              'displayName': 'Guest',
+            },
           },
         );
       },
     );
     final establishment = await api.establishSession(
-      contactKey: 'guest',
+      email: 'guest@example.test',
       displayName: 'Guest',
       inviteCode: '2VKA1RPZ90S6',
       visitorId: 'vis-1',

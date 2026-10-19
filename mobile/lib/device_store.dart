@@ -47,15 +47,18 @@ class StoredSession {
     required this.token,
     required this.userId,
     required this.displayName,
+    this.email,
   });
   final String token;
   final String userId;
   final String displayName;
+  final String? email;
 
   Map<String, Object?> toJson() => {
     'token': token,
     'userId': userId,
     'displayName': displayName,
+    if (email != null) 'email': email,
   };
 
   static StoredSession fromJson(Object? json) {
@@ -64,6 +67,7 @@ class StoredSession {
       token: map['token'] as String,
       userId: map['userId'] as String,
       displayName: map['displayName'] as String,
+      email: map['email'] as String?,
     );
   }
 }
@@ -148,7 +152,15 @@ class DeviceStore {
     return _loaded!;
   }
 
-  Future<void> save() async {
+  Future<void> _writes = Future.value();
+
+  Future<void> save() {
+    final write = _writes.then((_) => _save());
+    _writes = write.catchError((_) {});
+    return write;
+  }
+
+  Future<void> _save() async {
     final device = _loaded;
     if (device == null || _memoryOnly) return;
     final file = await _file();

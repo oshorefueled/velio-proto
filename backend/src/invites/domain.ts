@@ -25,6 +25,13 @@ export class InviteExpiredError extends Error {
   }
 }
 
+export class InviteUsedError extends Error {
+  constructor() {
+    super("This personal invitation has already been used");
+    this.name = "InviteUsedError";
+  }
+}
+
 /** A vouch claims only its named recipient (PLANS 2.5 "wrong recipient"). */
 export class InviteRecipientMismatchError extends Error {
   constructor() {

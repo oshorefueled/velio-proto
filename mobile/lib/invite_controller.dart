@@ -42,6 +42,22 @@ class InviteController extends ChangeNotifier {
   int _claimRun = 0;
   int _identityRun = 0;
   bool _hapticPending = false;
+  bool _checkout = false;
+  bool _retryEligible = false;
+  List<SavedBookingSummary> _savedBookings = [];
+  ActivityDetails? _savedDetails;
+  BookingView? _savedReceipt;
+  bool _savedBusy = false;
+  String? _savedError;
+  int _savedRun = 0;
+
+  bool get checkout => _checkout;
+  List<SavedBookingSummary> get savedBookings =>
+      List.unmodifiable(_savedBookings);
+  ActivityDetails? get savedDetails => _savedDetails;
+  BookingView? get savedReceipt => _savedReceipt;
+  bool get savedBusy => _savedBusy;
+  String? get savedError => _savedError;
 
   /// One observation set per displayed preview: invite_opened and
   /// activity_viewed use stable event ids; a later observation gets its own.
@@ -74,33 +90,75 @@ class InviteController extends ChangeNotifier {
     return due;
   }
 
-  /// Boot: load durable facts, validate a saved credential against
-  /// GET /demo/me, and re-open the retained code. A stale credential is
-  /// dropped without losing the invite context; nothing is created silently.
+  /// Validate persisted access and migrate legacy files through the server's
+  /// account representation. Network failure retains the remembered account.
   Future<void> bootstrap() async {
+    final run = _identityRun;
+    final codeGeneration = _codeGeneration;
     final device = await store.load();
+    if (run != _identityRun) return;
     _device = device;
     _session = device.session;
     _code = device.lastCode;
     final session = _session;
     if (session != null) {
       try {
-        await api.me(session.token);
+        final user = await api.me(session.token);
+        if (run != _identityRun || _session?.token != session.token) return;
+        if (user.id != session.userId) {
+          throw StateError('Account did not match');
+        }
+        _session = StoredSession(
+          token: session.token,
+          userId: user.id,
+          displayName: user.displayName,
+          email: user.email,
+        );
+        device.session = _session;
+        await store.save();
       } on ApiError catch (error) {
+        if (run != _identityRun || _session?.token != session.token) return;
         if (error.isSessionError) {
-          _session = null;
-          device.session = null;
-          await store.save();
+          await _credentialLost(token: session.token);
+        } else {
+          _identityError = 'Could not verify account access. Your account is remembered; retry when connected.';
         }
       } catch (_) {
-        // Unreachable backend: keep the saved session until a real answer.
+        if (run != _identityRun) return;
+        _identityError = 'Could not verify account access. Your account is remembered; retry when connected.';
       }
-      notifyListeners();
     }
-    final code = _code;
-    if (code != null && code.isNotEmpty) {
-      await openCode(code);
+    if (run != _identityRun) return;
+    notifyListeners();
+    if (codeGeneration == _codeGeneration &&
+        _code != null &&
+        _code!.isNotEmpty) {
+      await openCode(_code!);
     }
+    if (_session != null) await loadSavedBookings();
+  }
+
+  /// Checkout is a deliberate observation, independent of account entry.
+  void continueToCheckout() {
+    final preview = _preview;
+    if (preview == null || _checkout || preview.state != 'claimable') return;
+    _checkout = true;
+    final visitor = visitorId;
+    if (visitor != null) {
+      unawaited(
+        api
+            .emitEvent(
+              type: 'claim_started',
+              eventId: generateUuidV4(),
+              visitorId: visitor,
+              visitId: _device?.visitId,
+              properties: {'inviteCode': preview.code},
+              token: _session?.token,
+            )
+            .catchError((_) {}),
+      );
+    }
+    notifyListeners();
   }
 
   Future<void> openLink(InviteLink link) async {
@@ -118,7 +176,14 @@ class InviteController extends ChangeNotifier {
     final code = raw.trim().toUpperCase();
     if (code.isEmpty) return;
     final generation = ++_codeGeneration;
+    if (_identityBusy) {
+      _identityRun += 1;
+      _identityBusy = false;
+    }
     _code = code;
+    _claimRun += 1;
+    _checkout = false;
+    _retryEligible = false;
     _preview = null;
     _resolveError = null;
     _resolving = true;
@@ -129,6 +194,7 @@ class InviteController extends ChangeNotifier {
     notifyListeners();
     final device = _device ?? await store.load();
     _device = device;
+    if (generation != _codeGeneration) return;
     if (device.lastCode != code) {
       device.visitId = null;
       device.invitationVisitorId = null;
@@ -196,20 +262,31 @@ class InviteController extends ChangeNotifier {
   /// The invite code rides establishment so acquisition is recorded for a NEW
   /// person only; resuming never rewrites acquisition.
   Future<void> selectIdentity({
-    required String contactKey,
+    required String email,
+    bool independent = false,
     String displayName = '',
   }) async {
-    if (_identityBusy || contactKey.trim().isEmpty) return;
+    if (_identityBusy || email.trim().isEmpty) return;
     final run = ++_identityRun;
-    final code = _code;
+    final code = independent ? null : _code;
+    _claimRun += 1;
+    _savedRun += 1;
+    _savedBookings = [];
+    _savedDetails = null;
+    _savedReceipt = null;
+    _savedError = null;
+    _savedBusy = false;
+    _claim = const ClaimIdle();
+    _retryEligible = false;
     _identityBusy = true;
     _identityError = null;
     notifyListeners();
     final device = _device ?? await store.load();
     _device = device;
+    if (run != _identityRun) return;
     try {
       final establishment = await api.establishSession(
-        contactKey: contactKey.trim(),
+        email: email.trim(),
         displayName: displayName.trim(),
         inviteCode: code,
         visitorId: visitorId ?? device.visitorId,
@@ -220,6 +297,7 @@ class InviteController extends ChangeNotifier {
         token: establishment.token,
         userId: establishment.user.id,
         displayName: establishment.user.displayName,
+        email: establishment.user.email,
       );
       final accountChanged = _session?.userId != session.userId;
       _session = session;
@@ -229,6 +307,7 @@ class InviteController extends ChangeNotifier {
       }
       device.session = session;
       await store.save();
+      if (run != _identityRun) return;
       // Identity is owned: a pending uncertain claim of the previous person
       // can never attach; a fresh quiet check shows any saved receipt.
       _claimRun += 1;
@@ -239,12 +318,13 @@ class InviteController extends ChangeNotifier {
       if (_preview != null) {
         await _quietBookingCheck();
       }
+      if (run == _identityRun) await loadSavedBookings();
     } catch (error) {
       if (run != _identityRun) return;
       _identityBusy = false;
       _identityError = error is ApiError
           ? error.message
-          : 'Could not select this identity.';
+          : 'Could not sign in. Your invitation is retained.';
       notifyListeners();
     }
   }
@@ -252,18 +332,97 @@ class InviteController extends ChangeNotifier {
   void signOut() {
     _identityRun += 1;
     _claimRun += 1;
+    _savedRun += 1;
     _session = null;
+    _identityBusy = false;
+    _identityError = null;
+    _savedBookings = [];
+    _savedDetails = null;
+    _savedReceipt = null;
+    _savedBusy = false;
+    _savedError = null;
+    _retryEligible = false;
     _openedEventId = null;
     _observationEmitted = false;
     _claim = const ClaimIdle();
     _hapticPending = false;
-    unawaited(() async {
-      final device = _device ?? await store.load();
-      _device = device;
+    final device = _device;
+    if (device != null) {
       device.session = null;
-      await store.save();
-    }());
+      unawaited(store.save());
+    }
     notifyListeners();
+  }
+
+  Future<void> loadSavedBookings() async {
+    final session = _session;
+    if (session == null) return;
+    final run = ++_savedRun;
+    _savedBusy = true;
+    _savedError = null;
+    notifyListeners();
+    try {
+      final bookings = await api.getMyBookings(session.token);
+      if (run != _savedRun || _session?.token != session.token) return;
+      _savedBookings = bookings;
+    } catch (error) {
+      if (run != _savedRun || _session?.token != session.token) return;
+      if (error is ApiError && error.isSessionError) {
+        _savedBusy = false;
+        await _credentialLost(token: session.token);
+        return;
+      }
+      _savedError = 'Could not load saved bookings. Please retry.';
+    }
+    if (run != _savedRun) return;
+    _savedBusy = false;
+    notifyListeners();
+  }
+
+  Future<void> openSavedBooking(SavedBookingSummary summary) async {
+    final session = _session;
+    if (session == null) return;
+    final run = ++_savedRun;
+    _savedDetails = null;
+    _savedReceipt = null;
+    _savedBusy = true;
+    _savedError = null;
+    notifyListeners();
+    try {
+      final receipt = await api.getMyBooking(session.token, summary.activityId);
+      final details = await api.getActivity(summary.activityId);
+      if (run != _savedRun || _session?.token != session.token) return;
+      if (receipt.userId != session.userId ||
+          receipt.id != summary.id ||
+          receipt.activityId != details.activity.id ||
+          receipt.planId != details.plan.id ||
+          receipt.planId != summary.planId) {
+        throw StateError('Saved booking did not match');
+      }
+      _savedDetails = details;
+      _savedReceipt = receipt;
+    } catch (error) {
+      if (run != _savedRun || _session?.token != session.token) return;
+      if (error is ApiError && error.isSessionError) {
+        _savedBusy = false;
+        await _credentialLost(token: session.token);
+        return;
+      }
+      _savedError = 'Could not open this saved booking. Select it to retry.';
+    }
+    if (run != _savedRun) return;
+    _savedBusy = false;
+    notifyListeners();
+  }
+
+  Future<void> restoreAccess() async {
+    final session = _session;
+    if (session == null || _identityBusy) return;
+    await _credentialLost(token: session.token);
+    if (_session != null && _identityError == null) {
+      await _quietBookingCheck();
+      await loadSavedBookings();
+    }
   }
 
   /// Explicit claim (issue #19): the operation is persisted BEFORE the POST,
@@ -272,12 +431,32 @@ class InviteController extends ChangeNotifier {
   Future<void> claim() async {
     final preview = _preview;
     final session = _session;
-    if (preview == null || session == null) return;
-    if (_claim is ClaimSubmitting || _claim is ClaimChecking) return;
+    if (preview == null ||
+        session == null ||
+        _identityBusy ||
+        _identityError != null) {
+      return;
+    }
+    if (_claim is ClaimSubmitting ||
+        _claim is ClaimChecking ||
+        _claim is ClaimUnknown ||
+        _claim is ClaimConfirmed) {
+      return;
+    }
     if (_claim is ClaimRefused) {
       final refused = _claim as ClaimRefused;
       if (refused.retryAt?.isAfter(DateTime.now()) ?? false) return;
     }
+    if (preview.state != 'claimable' || preview.activity.remainingSpots <= 0) {
+      return;
+    }
+    final existing =
+        _device?.operations['${session.userId}:${preview.activity.id}'];
+    if (existing != null && !existing.definitiveFailure && !_retryEligible) {
+      await _reconcile(quiet: false);
+      return;
+    }
+    _retryEligible = false;
     // Mark submitting synchronously: a second tap in the same event-loop
     // turn is already blocked before any await suspends this one.
     final run = ++_claimRun;
@@ -300,21 +479,7 @@ class InviteController extends ChangeNotifier {
       active.inviteCode ??= preview.code;
     }
     await store.save();
-    final visitor = visitorId;
-    if (visitor != null) {
-      unawaited(
-        api
-            .emitEvent(
-              type: 'claim_started',
-              eventId: generateUuidV4(),
-              visitorId: visitor,
-              visitId: _device?.visitId,
-              properties: {'inviteCode': active.inviteCode},
-              token: session.token,
-            )
-            .catchError((_) {}),
-      );
-    }
+    if (run != _claimRun || _session?.token != session.token) return;
     try {
       final result = await api.bookActivity(
         session.token,
@@ -348,14 +513,24 @@ class InviteController extends ChangeNotifier {
         case 'activity_sold_out':
           active.definitiveFailure = true;
           await store.save();
+          if (run != _claimRun) return;
           _claim = const ClaimRefused(
             reason: 'sold-out',
             message:
                 'This activity just filled — your attempt was not reserved.',
           );
+          try {
+            final refreshed = await api.resolveInvite(preview.code);
+            if (run != _claimRun) return;
+            _preview = refreshed;
+          } catch (_) {
+            if (run != _claimRun) return;
+            _resolveError = 'Could not refresh availability. Your booking was not saved; retry the invitation preview.';
+          }
         case 'activity_started':
           active.definitiveFailure = true;
           await store.save();
+          if (run != _claimRun) return;
           _claim = const ClaimRefused(
             reason: 'started',
             message: 'This activity has already started.',
@@ -365,20 +540,47 @@ class InviteController extends ChangeNotifier {
             reason: 'rate-limited',
             message: 'Too many attempts. Please wait before trying again.',
             retryAfterSeconds: error.retryAfterSeconds,
+            retryAt: error.retryAfterSeconds == null
+                ? null
+                : DateTime.now().add(
+                    Duration(seconds: error.retryAfterSeconds!),
+                  ),
           );
         case 'invite_expired':
           active.definitiveFailure = true;
           await store.save();
+          if (run != _claimRun) return;
           _claim = const ClaimRefused(
             reason: 'invite-expired',
             message: 'This invitation has expired, so it cannot be claimed.',
           );
+          try {
+            final refreshed = await api.resolveInvite(preview.code);
+            if (run != _claimRun) return;
+            _preview = refreshed;
+          } catch (_) {
+            // The refusal already explains the outcome; the preview stays.
+          }
         case 'invite_not_found':
+          active.definitiveFailure = true;
+          await store.save();
+          if (run != _claimRun) return;
           _claim = const ClaimRefused(
             reason: 'invite-unknown',
             message: 'This invitation code is not recognized.',
           );
+        case 'invite_used':
+          active.definitiveFailure = true;
+          await store.save();
+          if (run != _claimRun) return;
+          _claim = const ClaimRefused(
+            reason: 'invite-used',
+            message: 'This personal invitation has already been used.',
+          );
         case 'invite_recipient_mismatch':
+          active.definitiveFailure = true;
+          await store.save();
+          if (run != _claimRun) return;
           _claim = const ClaimRefused(
             reason: 'invite-mismatch',
             message: 'This invitation is for another email. Sign out and use the invited email.',
@@ -439,12 +641,44 @@ class InviteController extends ChangeNotifier {
         return;
       }
       if (error.status == 404 && error.code == 'booking_not_found') {
-        _claim = quiet
-            ? const ClaimIdle()
-            : const ClaimRefused(
-                reason: 'absent',
-                message: 'No saved booking was found for this activity — nothing was reserved.',
-              );
+        final operation =
+            _device?.operations['${session.userId}:${preview.activity.id}'];
+        if (operation != null && !operation.definitiveFailure) {
+          try {
+            final refreshed = await api.resolveInvite(
+              operation.inviteCode ?? preview.code,
+            );
+            if (run != _claimRun) return;
+            if (refreshed.activity.id != preview.activity.id) {
+              throw StateError('Invitation did not match');
+            }
+            _retryEligible =
+                refreshed.state == 'claimable' &&
+                refreshed.activity.remainingSpots > 0;
+            if (_preview?.code == refreshed.code) _preview = refreshed;
+            _claim = ClaimRefused(
+              reason: _retryEligible ? 'absent' : 'unavailable',
+              // The original request may still be committing on the server;
+              // a retry reuses its operation, so it returns that same booking.
+              message: _retryEligible
+                  ? 'No saved booking was found yet. Review the refreshed details, then confirm again — if your earlier attempt was saved, you get that same booking, never a second one.'
+                  : 'No saved booking was found. This invitation is now ${refreshed.state}; confirmation is unavailable.',
+            );
+          } catch (_) {
+            if (run != _claimRun) return;
+            _retryEligible = false;
+            _claim = const ClaimUnknown(
+              message: 'No saved booking was found, but invitation eligibility could not be refreshed. Check again when connected.',
+            );
+          }
+        } else {
+          _claim = quiet
+              ? const ClaimIdle()
+              : const ClaimRefused(
+                  reason: 'absent',
+                  message: 'No saved booking was found for this activity.',
+                );
+        }
         notifyListeners();
         return;
       }
@@ -452,9 +686,11 @@ class InviteController extends ChangeNotifier {
         message: 'Could not check your booking: ${error.message}',
       );
       notifyListeners();
-    } catch (error) {
+    } catch (_) {
       if (run != _claimRun) return;
-      _claim = ClaimUnknown(message: 'Could not check your booking: $error');
+      _claim = const ClaimUnknown(
+        message: 'Could not reach Velio to check your booking. Check your connection, then check again.',
+      );
       notifyListeners();
     }
   }
@@ -465,20 +701,62 @@ class InviteController extends ChangeNotifier {
     // recovered or replayed booking never does.
     _hapticPending = newlyCreated;
     notifyListeners();
+    if (newlyCreated || !_savedBookings.any((b) => b.id == booking.id)) {
+      unawaited(loadSavedBookings());
+    }
   }
 
   Future<void> _credentialLost({required String token}) async {
-    // An old 401 must never expire a replacement credential.
-    if (_session != null && _session!.token != token) return;
-    final device = _device ?? await store.load();
-    _device = device;
-    device.session = null;
-    await store.save();
-    _session = null;
-    _identityRun += 1;
+    final remembered = _session;
+    if (remembered == null || remembered.token != token || _identityBusy) {
+      return;
+    }
+    final run = _identityRun;
     _claimRun += 1;
+    _savedRun += 1;
     _claim = const ClaimIdle();
+    _savedDetails = null;
+    _savedReceipt = null;
+    _savedBusy = false;
     _hapticPending = false;
+    _retryEligible = false;
+    if (remembered.email == null) {
+      // Old files cannot reconstruct an email from a user id or display name.
+      _session = null;
+      _device?.session = null;
+      _savedBookings = [];
+      _identityError = 'Your previous session expired. Sign in with your email to restore access.';
+      await store.save();
+      if (run == _identityRun) notifyListeners();
+      return;
+    }
+    _identityBusy = true;
+    _identityError = null;
+    notifyListeners();
+    try {
+      final result = await api.establishSession(
+        email: remembered.email!,
+        visitorId: visitorId ?? _device!.visitorId,
+        visitId: _device?.visitId,
+      );
+      if (run != _identityRun || _session?.token != token) return;
+      if (result.created || result.user.id != remembered.userId) {
+        throw StateError('Account did not match');
+      }
+      _session = StoredSession(
+        token: result.token,
+        userId: result.user.id,
+        displayName: result.user.displayName,
+        email: result.user.email,
+      );
+      _device?.session = _session;
+      await store.save();
+    } catch (_) {
+      if (run != _identityRun || _session?.token != token) return;
+      _identityError = 'Could not restore account access. Your account is remembered; retry when connected.';
+    }
+    if (run != _identityRun) return;
+    _identityBusy = false;
     notifyListeners();
   }
 }
@@ -516,12 +794,11 @@ class ClaimRefused extends ClaimPhase {
     required this.reason,
     required this.message,
     this.retryAfterSeconds,
+    this.retryAt,
   });
   final String reason;
   final String message;
   final int? retryAfterSeconds;
 
-  DateTime? get retryAt => retryAfterSeconds == null
-      ? null
-      : DateTime.now().add(Duration(seconds: retryAfterSeconds!));
+  final DateTime? retryAt;
 }
