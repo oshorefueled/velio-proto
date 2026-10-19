@@ -336,8 +336,8 @@ describe("open-to-claim conversion", () => {
       experimentVersion: "conv-v1",
     });
     const iv2 = await insertInvite(pool, { code: "TXCNV2AAAAAA", rail: "public_share", creatorId: h2, activityId: otherActivity.activityId, planId: otherActivity.planId, createdAt: T("2026-01-18T00:00:00Z"), expiresAt: T("2026-03-01T00:00:00Z") });
-    const ivf = await insertInvite(pool, { code: "TXCNVFAAAAAA", rail: "public_share", creatorId: h2, activityId: act4.activityId, planId: act4.planId, createdAt: T("2026-01-18T00:00:00Z"), expiresAt: T("2026-03-01T00:00:00Z") });
-    const ive = await insertInvite(pool, { code: "TXCNVEAAAAAA", rail: "public_share", creatorId: h2, activityId: act4.activityId, planId: act4.planId, createdAt: T("2026-01-10T00:00:00Z"), expiresAt: T("2026-01-20T12:00:00Z") });
+    const ivf = await insertInvite(pool, { code: "TXCNVFAAAAAA", rail: "public_share", creatorId: g1, activityId: act4.activityId, planId: act4.planId, createdAt: T("2026-01-18T00:00:00Z"), expiresAt: T("2026-03-01T00:00:00Z") });
+    const ive = await insertInvite(pool, { code: "TXCNVEAAAAAA", rail: "public_share", creatorId: g2, activityId: act4.activityId, planId: act4.planId, createdAt: T("2026-01-10T00:00:00Z"), expiresAt: T("2026-01-20T12:00:00Z") });
 
     const v1 = randomVisitor();
     // Returning guest: two displayed opens before identity completion.
@@ -630,7 +630,7 @@ describe("as-of facts and dataset boundaries", () => {
     await pool.query("INSERT INTO visitor_identities (visitor_id,user_id,created_at) VALUES ($1,$2,'2027-03-01')", [visitor, host]);
     await insertEvent(pool, { name: "invite_opened", userId: guest, visitorId: visitor, inviteId: i, outcome: "available", channel: "web", occurredAt: "2027-03-02T08:00:00Z" });
     await insertEvent(pool, { name: "spot_claimed", userId: guest, inviteId: i, occurredAt: "2027-03-02T09:00:00Z" });
-    const other = await insertInvite(pool, { ...a, code: "CAN0N2AAAAAA", rail: "public_share", creatorId: host, createdAt: "2027-03-01T00:00:00Z", expiresAt: "2027-03-19T00:00:00Z" });
+    const other = await insertInvite(pool, { ...a, code: "CAN0N2AAAAAA", rail: "public_share", creatorId: guest, createdAt: "2027-03-01T00:00:00Z", expiresAt: "2027-03-19T00:00:00Z" });
     await insertEvent(pool, { name: "invite_opened", userId: guest, visitorId: visitor, inviteId: other, outcome: "available", channel: "web", occurredAt: "2027-03-02T08:30:00Z" });
     const inputs = { start: "2027-03-01T00:00:00Z", end: "2027-03-08T00:00:00Z", asOf: "2027-03-09T00:00:00Z" };
     const report = await run("invite_conversion", inputs);

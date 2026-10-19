@@ -25,7 +25,7 @@ export const CLIENT_CHANNELS = ["web", "flutter"] as const;
 export type ClientChannel = (typeof CLIENT_CHANNELS)[number];
 
 /** Displayed landing outcomes only; current availability is never rewritten in. */
-export const OPEN_OUTCOMES = ["available", "full", "expired"] as const;
+export const OPEN_OUTCOMES = ["available", "full", "expired", "used"] as const;
 
 export type OpenOutcome = (typeof OPEN_OUTCOMES)[number];
 

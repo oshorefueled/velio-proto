@@ -223,7 +223,7 @@ export async function runWalkthrough(options: { databaseUrl?: string; migrationU
     //    the host vouches for a brand-new contact (guest B).
     const publicShare = await call("public-share-creation", "POST", `/activities/${treatmentId}/invites`, { rail: "public_share" }, guestAToken, 201);
     const shareCode = (publicShare.invite as { code: string }).code;
-    const vouch = await call("vouch-creation", "POST", `/activities/${treatmentId}/invites`, { rail: "vouch", targetContactKey: `${runId}-guest-b@example.test` }, hostToken, 201);
+    const vouch = await call("vouch-creation", "POST", `/activities/${treatmentId}/invites`, { rail: "vouch", recipientEmail: `${runId}-guest-b@example.test` }, hostToken, 201);
     const vouchCode = (vouch.invite as { code: string }).code;
 
     // 8. Wrong recipient and unknown code error shapes.

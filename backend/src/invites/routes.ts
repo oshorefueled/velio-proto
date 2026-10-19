@@ -9,12 +9,6 @@ export interface InvitesRouteDeps {
   identity: IdentityDeps;
 }
 
-/**
- * Thin transport for the public-share rail (ticket #6). Creation acts as the
- * session's person and consumes the creation quota for identity and IP;
- * resolution is anonymous and consumes the per-IP resolution quota. Claiming
- * goes through the booking route with an invite code, not through here.
- */
 export function registerInvitesRoutes(app: FastifyInstance, deps: InvitesRouteDeps): void {
   useDomainErrorHandler(app);
 
@@ -25,16 +19,16 @@ export function registerInvitesRoutes(app: FastifyInstance, deps: InvitesRouteDe
     if (body.rail !== "public_share" && body.rail !== "vouch") {
       throw new ActivityValidationError({ rail: "must be 'public_share' or 'vouch'" });
     }
-    if (body.rail === "vouch" && typeof body.targetContactKey !== "string") {
-      throw new ActivityValidationError({ targetContactKey: "must name the vouched contact" });
+    if (body.rail === "vouch" && typeof body.recipientEmail !== "string") {
+      throw new ActivityValidationError({ recipientEmail: "must be an email address" });
     }
-    const invite = await createInvite(deps.invites, creator, id, {
+    const { created, ...invite } = await createInvite(deps.invites, creator, id, {
       ip: request.ip,
       rail: body.rail,
-      targetContactKey: body.targetContactKey,
+      recipientEmail: body.recipientEmail,
     });
-    void reply.code(201);
-    return { invite };
+    void reply.code(created ? 201 : 200);
+    return { invite, created };
   });
 
   app.get("/invites/:code", async (request) => {

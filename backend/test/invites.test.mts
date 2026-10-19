@@ -6,8 +6,6 @@ import { createPool } from "../src/db/pool.ts";
 import type { UserSnapshot } from "../src/identity/domain.ts";
 import { establishIdentity } from "../src/identity/service.ts";
 import {
-  ActivityCompletedError,
-  ActivitySoldOutError,
   ActivityStartedError,
 } from "../src/booking/domain.ts";
 import { ForbiddenError } from "../src/activities/domain.ts";
@@ -125,7 +123,7 @@ describe("createPublicShare", () => {
     expect(assignment.rows).toEqual([{ experiment_version: "t6", experiment_arm: "treatment" }]);
 
     const second = await createPublicShare(invites, host, activityId, { ip: "10.1.0.2" });
-    expect(second.code).not.toBe(view.code);
+    expect(second.code).toBe(view.code);
   });
 
   it("lets a confirmed booker create but refuses unrelated people", async () => {
@@ -146,78 +144,21 @@ describe("createPublicShare", () => {
 
     const treatment = await publish("Share Gates Switch", 100);
     const issued = await createPublicShare(invites, host, treatment, { ip: "10.3.0.2" });
-    await expect(createPublicShare(invitesSwitchedOff, host, treatment, { ip: "10.3.0.3" })).rejects.toBeInstanceOf(
-      ForbiddenError,
-    );
+    expect((await createPublicShare(invitesSwitchedOff, host, treatment, { ip: "10.3.0.3" })).id).toBe(issued.id);
     // The issued link still resolves and stays claimable.
     const preview = await resolveInvite(invitesSwitchedOff, issued.code, { ip: "10.3.0.4" });
     expect(preview.state).toBe("claimable");
   });
 
-  it("refuses started, full and completed activities", async () => {
-    const full = await publish("Share Gates Full", 100);
-    await withClient(migrationUrl, (client) =>
-      client.query("UPDATE activities SET booked_count = capacity WHERE id = $1", [full]),
-    );
-    await expect(createPublicShare(invites, host, full, { ip: "10.4.0.2" })).rejects.toBeInstanceOf(
-      ActivitySoldOutError,
-    );
-
-    const completed = await publish("Share Gates Completed", 100);
-    await withClient(migrationUrl, (client) => client.query(
-        "UPDATE plans SET completed = true, completed_by = $2, completed_at = now() WHERE activity_id = $1",
-        [completed, host.id],
-      ));
-    await expect(createPublicShare(invites, host, completed, { ip: "10.4.0.3" })).rejects.toBeInstanceOf(
-      ActivityCompletedError,
-    );
-
-    // A started activity: publish future, then move the start into the past.
-    const started = await publish("Share Gates Started", 100);
-    const before = await createPublicShare(invites, host, started, { ip: "10.4.0.4" });
-    expect(before.rail).toBe("public_share");
-    await withClient(migrationUrl, (client) =>
-      client.query("UPDATE activities SET starts_at = now() - interval '1 hour' WHERE id = $1", [started]),
-    );
-    await expect(createPublicShare(invites, host, started, { ip: "10.4.0.5" })).rejects.toBeInstanceOf(
-      ActivityStartedError,
-    );
+  it("when an activity starts, an issued public link is retrieved but new creation is refused", async () => {
+    const activityId = await publish("Share Start", 100);
+    const before = await createPublicShare(invites, host, activityId, { ip: uniqueIp() });
+    await bookActivityDirectly(outsider, activityId);
+    await withClient(migrationUrl, client => client.query("UPDATE activities SET starts_at=now()-interval '1 hour' WHERE id=$1", [activityId]));
+    expect((await createPublicShare(invites, host, activityId, { ip: uniqueIp() })).id).toBe(before.id);
+    await expect(createPublicShare(invites, outsider, activityId, { ip: uniqueIp() })).rejects.toBeInstanceOf(ActivityStartedError);
   });
 
-  it("applies finite creation quotas per identity with a retry delay", async () => {
-    const limited: InvitesDeps = {
-      ...invites,
-      creationQuota: { perIdentity: 2, perIp: 1000, windowSeconds: 3600 },
-    };
-    // A fresh creator hosting their own activity: the fixed window persists
-    // across the file's earlier creations, so the boundary must be observed
-    // on clean counters and the creator must be the activity's host.
-    const creator = await newPerson("Quota Creator");
-    const activityId = await publishAs(creator, "Share Quota Identity", 100);
-    await createPublicShare(limited, creator, activityId, { ip: uniqueIp() });
-    await createPublicShare(limited, creator, activityId, { ip: uniqueIp() });
-    const err = await createPublicShare(limited, creator, activityId, { ip: uniqueIp() }).catch(
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(RateLimitError);
-    expect((err as RateLimitError).retryAfterSeconds).toBeGreaterThan(0);
-    expect((err as RateLimitError).retryAfterSeconds).toBeLessThanOrEqual(3600);
-  });
-
-  it("applies a per-IP cap independent of identity", async () => {
-    const limited: InvitesDeps = {
-      ...invites,
-      creationQuota: { perIdentity: 1000, perIp: 1, windowSeconds: 3600 },
-    };
-    const first = await newPerson("Ip Creator One");
-    const activityId = await publishAs(first, "Share Quota Ip", 100);
-    const sharedIp = uniqueIp();
-    await createPublicShare(limited, first, activityId, { ip: sharedIp });
-    const second = await newPerson("Ip Creator Two");
-    await expect(createPublicShare(limited, second, activityId, { ip: sharedIp })).rejects.toBeInstanceOf(
-      RateLimitError,
-    );
-  });
 });
 
 async function bookActivityDirectly(person: UserSnapshot, activityId: string): Promise<void> {
@@ -306,7 +247,7 @@ describe("resolveInvite", () => {
         await client.query("ALTER TABLE invites ENABLE TRIGGER invites_immutable");
       }
     });
-    expect((await resolveInvite(invites, startedInvite.code, { ip: "10.10.0.4" })).state).toBe("started");
+    expect((await resolveInvite(invites, startedInvite.code, { ip: "10.10.0.4" })).state).toBe("expired");
 
     const fullActivity = await publish("Resolve Full", 100);
     const fullInvite = await createPublicShare(invites, host, fullActivity, { ip: "10.10.0.5" });

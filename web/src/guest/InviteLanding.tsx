@@ -18,10 +18,11 @@ import { useSession } from "../session.js";
  * claim_started only for a deliberate authenticated claim action.
  */
 
-const OPENED_OUTCOME: Record<string, "available" | "full" | "expired" | undefined> = {
+const OPENED_OUTCOME: Record<string, "available" | "full" | "expired" | "used" | undefined> = {
   claimable: "available",
   full: "full",
   expired: "expired",
+  used: "used",
 };
 
 
@@ -71,19 +72,9 @@ function ClaimControls({
               )}
             </dd>
           </div>
-          <div>
-            <dt>Source</dt>
-            <dd>
-              {phase.booking.attribution.rail}
-              {phase.booking.attribution.generation > 0
-                ? ` · generation ${phase.booking.attribution.generation}`
-                : ""}
-            </dd>
-          </div>
         </dl>
         <p className="hint">
-          This is your saved record — your actual booking source is shown, regardless of which
-          invitation link you opened.
+          This is your saved record — you can return to your place from your saved bookings.
         </p>
       </div>
     );
@@ -112,7 +103,7 @@ function ClaimControls({
         </div>
         {phase.reason === "invite-mismatch" && (
           <p className="hint">
-            Use "Switch identity" above to select the contact this vouch was meant for.
+            Change account above to sign in with the invited email.
           </p>
         )}
         {(phase.reason === "absent" || phase.reason === "failed" || phase.reason === "rate-limited") && (
@@ -146,11 +137,10 @@ function ClaimControls({
     return (
       <div className="booking-panel">
         <button type="button" className="button-primary" onClick={onNeedIdentity}>
-          Select identity to claim
+          Sign in to continue
         </button>
         <p className="hint">
-          Your invitation stays exactly where it is while you pick or resume your identity.
-          Claiming never takes payment.
+          Your invitation stays here while you sign in.
         </p>
       </div>
     );
@@ -168,8 +158,7 @@ function ClaimControls({
         Claim your spot
       </button>
       <p className="hint">
-        One spot is reserved only after the server saves your booking — no payment in this
-        prototype.
+        A spot is reserved only after your booking is confirmed.
       </p>
     </div>
   );
@@ -181,12 +170,14 @@ export function InviteLanding({
   booking,
   onRequestIdentity,
   onBrowse,
+  onCodeChange,
 }: {
   code: string;
   visible: boolean;
   booking: BookingStore;
   onRequestIdentity: () => void;
   onBrowse: () => void;
+  onCodeChange: (code: string) => void;
 }): ReactNode {
   const { api, state } = useSession();
   const sessionToken = state.status.status === "ready" ? state.status.token : null;
@@ -194,6 +185,7 @@ export function InviteLanding({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notRecognized, setNotRecognized] = useState(false);
+  const [correctedCode, setCorrectedCode] = useState(code);
   const [retry, setRetry] = useState(0);
   const generation = useRef(0);
   const observationId = useRef(crypto.randomUUID());
@@ -279,8 +271,16 @@ export function InviteLanding({
     });
   }, [live.applied, activityId]);
 
+  const accountId = state.status.status === "ready" ? state.status.user.id : null;
+  useEffect(() => {
+    observationId.current = crypto.randomUUID();
+    activityObservationId.current = crypto.randomUUID();
+    openedForObservation.current = false;
+    viewedForObservation.current = false;
+  }, [accountId]);
+
   // One opened observation per mounted landing, only for a committed visible
-  // preview with a documented outcome; started/completed have none.
+  // preview with a documented outcome, including already-used invitations.
   useEffect(() => {
     if (!visible || loading || loadError !== null || preview === null) return;
     if (!viewedForObservation.current) {
@@ -334,13 +334,11 @@ export function InviteLanding({
   const lifecycleExplanation = (state: InvitePreview["state"]): string => {
     switch (state) {
       case "expired":
-        return "This invitation has expired, so it cannot be claimed.";
-      case "started":
-        return "The activity has already started — the invitation can no longer be claimed.";
+        return "Booking is closed because this invitation has expired.";
       case "full":
         return "The activity is full — every spot is taken.";
-      case "completed":
-        return "This plan was already completed by its host.";
+      case "used":
+        return "This personal invitation has already been used.";
       default:
         return "";
     }
@@ -364,6 +362,17 @@ export function InviteLanding({
             This invitation code is not recognized. Check the link or code — availability of the
             intended activity is unknown from here.
           </div>
+          <form onSubmit={(event) => {
+            event.preventDefault();
+            const nextCode = correctedCode.trim().toUpperCase();
+            if (!nextCode) return;
+            if (nextCode === code) setRetry(value => value + 1);
+            else onCodeChange(nextCode);
+          }}>
+            <label htmlFor="correct-invite-code">Invitation code</label>
+            <input id="correct-invite-code" name="inviteCode" value={correctedCode} onChange={event => setCorrectedCode(event.target.value)} autoCapitalize="characters" required />
+            <button type="submit" className="button-primary">Open invitation</button>
+          </form>
           <div className="invite-actions">
             <button type="button" className="button-primary" onClick={() => setRetry((v) => v + 1)}>
               Retry
@@ -393,17 +402,23 @@ export function InviteLanding({
       {!loading && preview !== null && (
         <>
           <h2 id="invite-landing-heading">{preview.activity.title}</h2>
+          <p>{preview.activity.description}</p>
+          <h3>Shared plan</h3><p>{preview.plan.itinerary}</p>
+          <h3>Your host: {preview.host.displayName}</h3><p>{preview.host.summary || "Host background coming soon."}</p>
+          {preview.host.previousActivities.length === 0 ? <p>No previous activities listed.</p> : <ul>{preview.host.previousActivities.map(activity => <li key={activity.id}>{activity.title}</li>)}</ul>}
+          <a href={`velio://invite/${encodeURIComponent(preview.code)}?${new URLSearchParams({ visitId: sessionStorage.getItem("velio.visit.v1") ?? "", visitorId: state.visitorId })}`}>Open in Velio</a>
+          <p>Or enter code <code>{preview.code}</code> in the app.</p>
           <dl className="detail-grid">
             <div>
               <dt>Invited by</dt>
               <dd>{preview.inviterDisplayName}</dd>
             </div>
             <div>
-              <dt>Rail</dt>
+              <dt>Invitation</dt>
               <dd>
                 {preview.rail === "vouch"
-                  ? "Contact vouch — a personal endorsement; only the invited contact can claim it"
-                  : "Public share — anyone with the link can use it while valid; no personal endorsement"}
+                  ? "Personal invitation — use the email that was invited"
+                  : "Public link — anyone can book while spots remain"}
               </dd>
             </div>
             <div>
@@ -422,8 +437,7 @@ export function InviteLanding({
             <div>
               <dt>Price</dt>
               <dd>
-                {formatMoney(preview.activity.priceMinorUnits, preview.activity.currency)} — no
-                payment in this prototype
+                {formatMoney(preview.activity.priceMinorUnits, preview.activity.currency)}
               </dd>
             </div>
             <div>

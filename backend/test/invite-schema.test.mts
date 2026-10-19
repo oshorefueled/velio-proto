@@ -52,6 +52,16 @@ function appClient(): Client {
 }
 
 describe("invites schema", () => {
+  it("when a second public invitation targets the same sharing account and activity, the database refuses it", async () => {
+    await expect(withClient(migrationUrl, client => client.query(
+      `INSERT INTO invites (code, rail, creator_id, activity_id, plan_id, generation, expires_at)
+       VALUES ('DVPPVB1AAAAA', 'public_share', $1, $2, $3, 1, now()+interval '24 hours')`,
+      [hostId, activityId, planId],
+    ))).rejects.toMatchObject({ code: "23505", constraint: "invites_public_account_activity" });
+    const saved = await withClient(migrationUrl, client => client.query("SELECT id FROM invites WHERE creator_id=$1 AND activity_id=$2 AND rail='public_share'", [hostId, activityId]));
+    expect(saved.rows).toEqual([{ id: inviteId }]);
+  });
+
   it("accepts only the rails that exist today", async () => {
     await expect(
       withClient(migrationUrl, (client) =>
@@ -324,15 +334,7 @@ describe("invites schema", () => {
       ),
     ).rejects.toThrow();
     // Public shares stay reusable: a second share attribution is fine.
-    const share = await withClient(migrationUrl, (client) =>
-      client
-        .query(
-          `INSERT INTO invites (code, rail, creator_id, activity_id, plan_id, generation, expires_at)
-           VALUES ('VSCHEMSH2', 'public_share', $1, $2, $3, 1, now() + interval '24 hours') RETURNING id`,
-          [hostId, activityId, planId],
-        )
-        .then((r) => r.rows[0].id as string),
-    );
+    const share = inviteId;
     const shareBookings: string[] = [];
     for (const contact of ["vouch-schema-share1", "vouch-schema-share2"]) {
       const userId = await withClient(migrationUrl, (client) =>
@@ -358,7 +360,7 @@ describe("invites schema", () => {
       await withClient(migrationUrl, (client) =>
         client.query(
           `INSERT INTO booking_attributions (booking_id, rail, generation, inviter_id, invite_id, code)
-           VALUES ($1, 'public_share', 1, $2, $3, 'VSCHEMSH2')`,
+           VALUES ($1, 'public_share', 1, $2, $3, 'SCHEMATEST1')`,
           [b, hostId, share],
         ),
       );
