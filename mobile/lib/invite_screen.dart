@@ -365,7 +365,10 @@ class _IdentityCard extends StatelessWidget {
                   ),
                   TextButton(
                     key: const Key('switch-identity'),
-                    onPressed: controller.signOut,
+                    onPressed: () {
+                      contactField.clear();
+                      controller.signOut();
+                    },
                     child: const Text('Sign out'),
                   ),
                 ],

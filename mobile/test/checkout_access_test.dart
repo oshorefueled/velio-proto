@@ -490,4 +490,74 @@ void main() {
     expect(jsonDecode(posts.last.body!)['inviteCode'], 'CODEBBBB');
     expect(jsonDecode(posts.last.body!)['operationId'], isNot(refusedId));
   });
+
+  test('absence after a lost response says a repeat returns the same booking rather than that none exists', () async {
+    final h = Harness();
+    await h.openAndSelect();
+    h.transport.errors['POST /activities/a1/bookings'] = const SocketException(
+      'lost',
+    );
+    await h.controller.claim();
+    final refused = h.controller.claimState as ClaimRefused;
+    expect(refused.reason, 'absent');
+    expect(refused.message, contains('same booking'));
+  });
+
+  test('an unreachable booking check explains the connection without raw exception text', () async {
+    final h = Harness();
+    await h.openAndSelect();
+    h.transport.errors['POST /activities/a1/bookings'] = const SocketException(
+      'lost',
+    );
+    h.transport.errors['GET /activities/a1/bookings/me'] =
+        const SocketException('Connection failed (OS Error: errno = 101)');
+    await h.controller.claim();
+    final unknown = h.controller.claimState as ClaimUnknown;
+    expect(unknown.message, isNot(contains('SocketException')));
+    expect(unknown.message, isNot(contains('errno')));
+  });
+
+  test('a booking recovered after a lost response appears in the saved list', () async {
+    final h = Harness();
+    await h.openAndSelect();
+    expect(h.controller.savedBookings, isEmpty);
+    h.transport.errors['POST /activities/a1/bookings'] = const SocketException(
+      'lost',
+    );
+    h.transport.statusOverrides.remove('GET /activities/a1/bookings/me');
+    h.transport.responses['GET /activities/a1/bookings/me'] = h.transport
+        .bookingBody();
+    h.transport.responses['GET /my/bookings'] = {
+      'bookings': [
+        {
+          'id': 'b1',
+          'activityId': 'a1',
+          'planId': 'p1',
+          'activity': {
+            'id': 'a1',
+            'title': 'Evening walk',
+            'startsAt': '2026-12-01T18:00:00Z',
+            'timezone': 'Europe/Stockholm',
+          },
+        },
+      ],
+    };
+    await h.controller.claim();
+    expect(h.controller.claimState, isA<ClaimConfirmed>());
+    await Future<void>.delayed(Duration.zero);
+    expect(h.controller.savedBookings.single.title, 'Evening walk');
+  });
+
+  test('an invitation that expires during checkout refreshes the preview to expired', () async {
+    final h = Harness();
+    await h.openAndSelect();
+    h.transport.responses['GET /invites/2VKA1RPZ90S6'] = h.transport
+        .previewBody(code: '2VKA1RPZ90S6', state: 'expired');
+    h.transport.responses['POST /activities/a1/bookings'] = h.transport
+        .errorBody('invite_expired');
+    h.transport.statusOverrides['POST /activities/a1/bookings'] = 410;
+    await h.controller.claim();
+    expect((h.controller.claimState as ClaimRefused).reason, 'invite-expired');
+    expect(h.controller.preview!.state, 'expired');
+  });
 }

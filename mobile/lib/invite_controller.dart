@@ -554,6 +554,13 @@ class InviteController extends ChangeNotifier {
             reason: 'invite-expired',
             message: 'This invitation has expired, so it cannot be claimed.',
           );
+          try {
+            final refreshed = await api.resolveInvite(preview.code);
+            if (run != _claimRun) return;
+            _preview = refreshed;
+          } catch (_) {
+            // The refusal already explains the outcome; the preview stays.
+          }
         case 'invite_not_found':
           active.definitiveFailure = true;
           await store.save();
@@ -651,8 +658,10 @@ class InviteController extends ChangeNotifier {
             if (_preview?.code == refreshed.code) _preview = refreshed;
             _claim = ClaimRefused(
               reason: _retryEligible ? 'absent' : 'unavailable',
+              // The original request may still be committing on the server;
+              // a retry reuses its operation, so it returns that same booking.
               message: _retryEligible
-                  ? 'No saved booking was found. Review the refreshed details before confirming again.'
+                  ? 'No saved booking was found yet. Review the refreshed details, then confirm again — if your earlier attempt was saved, you get that same booking, never a second one.'
                   : 'No saved booking was found. This invitation is now ${refreshed.state}; confirmation is unavailable.',
             );
           } catch (_) {
@@ -677,9 +686,11 @@ class InviteController extends ChangeNotifier {
         message: 'Could not check your booking: ${error.message}',
       );
       notifyListeners();
-    } catch (error) {
+    } catch (_) {
       if (run != _claimRun) return;
-      _claim = ClaimUnknown(message: 'Could not check your booking: $error');
+      _claim = const ClaimUnknown(
+        message: 'Could not reach Velio to check your booking. Check your connection, then check again.',
+      );
       notifyListeners();
     }
   }
@@ -690,7 +701,9 @@ class InviteController extends ChangeNotifier {
     // recovered or replayed booking never does.
     _hapticPending = newlyCreated;
     notifyListeners();
-    if (newlyCreated) unawaited(loadSavedBookings());
+    if (newlyCreated || !_savedBookings.any((b) => b.id == booking.id)) {
+      unawaited(loadSavedBookings());
+    }
   }
 
   Future<void> _credentialLost({required String token}) async {

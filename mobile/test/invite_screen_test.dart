@@ -491,4 +491,39 @@ void main() {
       expect(haptics, hasLength(2));
     },
   );
+
+  testWidgets(
+    'Sign out clears the email so the next person starts with an empty field',
+    (tester) async {
+      final transport = FakeTransport();
+      transport.responses['POST /demo/sessions'] = {
+        'session': {'token': 'tok', 'expiresAt': '2027-01-01T00:00:00Z'},
+        'user': {
+          'id': 'u1',
+          'email': 'guest@example.test',
+          'displayName': 'Guest',
+        },
+        'created': false,
+      };
+      transport.responses['GET /my/bookings'] = {'bookings': []};
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await mountedController(tester, transport: transport);
+      await tester.tap(find.byKey(const Key('independent-sign-in')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('contact-field')),
+        'guest@example.test',
+      );
+      await tester.tap(find.byKey(const Key('select-identity')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('switch-identity')));
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(
+        find.byKey(const Key('contact-field')),
+      );
+      expect(field.controller!.text, isEmpty);
+    },
+  );
 }
