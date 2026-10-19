@@ -6,9 +6,8 @@ import { createSessionStore, type SessionState, type SessionStore } from "./sess
  * React binding for the session store: one provider, one hook. An
  * authorized API call that comes back 401 reports the loss to the store —
  * the workspace stays mounted (drafts and the selected activity survive),
- * identity selection is required again, and authorized state reloads only
- * after a person is re-established. An expired session never silently
- * creates a replacement identity.
+ * the remembered email restores access, and authorized views reload after
+ * recovery. The failed call is never replayed automatically.
  */
 
 export interface SessionContextValue {

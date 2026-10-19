@@ -92,7 +92,7 @@ describe("session store", () => {
     expect(state.status.status).toBe("credential-lost");
     expect(state.status.status === "credential-lost" && state.status.lostFrom?.id).toBe("user-1");
     // The stale credential is gone from storage.
-    expect(storageMap.has("velio.session.v1")).toBe(false);
+    expect(JSON.parse(storageMap.get("velio.session.v1")!).token).toBeNull();
     // The visitor id stays (versioned storage, correlation continues).
     expect(state.visitorId).toMatch(/^[0-9a-f-]{36}$/);
   });
@@ -130,4 +130,34 @@ describe("session store", () => {
     expect(store.getState().status.status).toBe("ready");
     expect(new ApiError(1, "x", "y").code).toBe("x");
   });
+});
+
+it("when automatic recovery is unreachable, the remembered account survives reload and Sign out abandons its delayed recovery", async () => {
+  const storage = memoryStorage();
+  const user = { id: "remembered", contactKey: "same@example.test", email: "same@example.test", displayName: "Same", signupSource: "direct", signupGeneration: 0 };
+  storage.setItem("velio.session.v1", JSON.stringify({ token: "expired", user }));
+  let entry: unknown;
+  const offline = new VelioApi(async (_url, init) => {
+    entry = JSON.parse(init.body!);
+    throw new TypeError("offline");
+  });
+  const store = createSessionStore(offline, storage);
+  store.credentialLost("Expired");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(entry).toMatchObject({ email: user.email });
+  expect(store.getState().status).toMatchObject({ status: "credential-lost", lostFrom: user, error: "offline" });
+  expect(JSON.parse(storage.getItem("velio.session.v1")!)).toEqual({ token: null, user });
+
+  let resolve!: (value: { status: number; json: unknown }) => void;
+  const pending = new Promise<{ status: number; json: unknown }>(r => { resolve = r; });
+  const resumed = createSessionStore(new VelioApi(async (_url, init) => {
+    expect(JSON.parse(init.body!).email).toBe(user.email);
+    return pending;
+  }), storage);
+  expect(resumed.getState().status).toMatchObject({ status: "credential-lost", lostFrom: user, restoring: true });
+  resumed.signOut();
+  resolve({ status: 200, json: { session: { token: "late", expiresAt: "2027-01-01" }, user, created: false } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(resumed.getState().status).toEqual({ status: "anonymous" });
+  expect(storage.getItem("velio.session.v1")).toBeNull();
 });

@@ -32,7 +32,7 @@ export function App(): ReactNode {
   const promptDialog = useRef<HTMLDialogElement>(null);
   const hostedGeneration = useRef(0);
   const observationId = useMemo(() => crypto.randomUUID(), [selectedId, sessionToken]);
-  const needsSignIn = identityPrompt || status.status === "credential-lost";
+  const needsSignIn = identityPrompt || (status.status === "credential-lost" && !status.restoring);
 
   useEffect(() => {
     if (ready) setIdentityPrompt(false);
@@ -109,6 +109,7 @@ export function App(): ReactNode {
       <button type="button" className="button-ghost" onClick={() => { setIdentityPrompt(false); if (status.status === "credential-lost") store.signOut(); }}>Close</button>
       <IdentityPanel contextNote="Your draft and selected activity are kept." inviteCode={inviteCode ?? undefined} />
     </dialog>}
+    {status.status === "credential-lost" && status.restoring && <p className="notice" role="status">Restoring access for {status.lostFrom?.email}… Your checkout and drafts are kept.</p>}
     <main className={`workspace${page === "publish" && !inviteCode ? " publishing" : ""}`}>
       <div className="column publish-column" hidden={page !== "publish" || !!inviteCode}>
         <PublishForm onPublished={activity => { selectActivity(activity.id); setPage("hosting"); reloadHosted(); }} />
@@ -121,7 +122,7 @@ export function App(): ReactNode {
         </div>
         <div className="column">
           {view === "invites" && selectedId ? <InvitePanel key={selectedId} activityId={selectedId} onBack={backToActivity} onRequestIdentity={() => setIdentityPrompt(true)} />
-            : selectedId ? <GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onRequestIdentity={() => setIdentityPrompt(true)} onOpenInvites={openInvites} />
+            : selectedId ? <GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onOpenInvites={openInvites} />
               : <div className="selection-intro"><p className="eyebrow">{page === "hosting" ? "Make something happen" : page === "bookings" ? "Your next outing" : "Find your people"}</p><h2>{page === "hosting" ? "Bring a good plan to life." : "A little adventure starts here."}</h2><p>{page === "hosting" ? "Choose an activity to see its bookings, or publish something new." : "Choose an activity to see the itinerary, meet your host and plan your day."}</p></div>}
         </div>
       </>}

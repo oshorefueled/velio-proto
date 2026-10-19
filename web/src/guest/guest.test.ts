@@ -61,14 +61,14 @@ afterEach(async () => {
 const user = {
   id: "booker",
   displayName: "Booker",
-  contactKey: "booker",
+  email: "booker@example.test",
   signupSource: "direct",
   signupGeneration: 0,
 };
 const secondUser = {
   id: "booker-2",
   displayName: "Second",
-  contactKey: "second",
+  email: "second@example.test",
   signupSource: "direct",
   signupGeneration: 0,
 };
@@ -178,6 +178,16 @@ it("when a booking request is in flight, submit stays disabled and a second clic
     return ok({});
   });
   await click("Book a spot");
+  const checkout = document.querySelector('[aria-label="Checkout"]');
+  expect(checkout).not.toBeNull();
+  expect(checkout!.textContent).toContain("Activity a");
+  expect(checkout!.textContent).toContain("UTC");
+  expect(checkout!.textContent).toContain("€10.50");
+  expect(checkout!.textContent).toContain("1 spot");
+  expect(checkout!.textContent).toContain("booker@example.test");
+  expect(checkout!.querySelector('[name="email"]')).toBeNull();
+  expect(postBodies).toHaveLength(0);
+  await click("Confirm one spot");
   const reserving = [...document.querySelectorAll("button")].find(
     (button) => button.textContent === "Reserving…",
   );
@@ -190,6 +200,7 @@ it("when a booking request is in flight, submit stays disabled and a second clic
   expect(document.body.textContent).toContain("Your spot is saved");
   expect(document.body.textContent).toContain("booking-booker");
   const receipt = document.querySelector('[aria-label="Saved booking"]')!;
+  expect(receipt.textContent).toContain("plan-a");
   expect(receipt.textContent).not.toContain("Source");
   expect(receipt.textContent).not.toContain("direct");
   expect(postBodies).toHaveLength(1);
@@ -218,6 +229,7 @@ it("when a committed booking's response is lost, the saved-booking lookup shows 
   });
   expect(myBookingCalls).toBe(1); // boot check: nothing saved yet
   await click("Book a spot");
+  await click("Confirm one spot");
   await settle();
   expect(myBookingCalls).toBe(2); // unknown outcome reconciled before anything else
   expect(document.body.textContent).toContain("Your spot is saved");
@@ -248,6 +260,7 @@ it("when the saved-booking check cannot run the outcome stays unknown; establish
   });
   checkFails = true;
   await click("Book a spot");
+  await click("Confirm one spot");
   await settle();
   expect(document.body.textContent).toContain("Check again");
   expect(document.body.textContent).not.toContain("nothing was reserved");
@@ -290,13 +303,14 @@ it("when a delayed booking success arrives after an identity switch, it confirms
     return ok({});
   });
   await click("Book a spot");
+  await click("Confirm one spot");
   await click("Sign out");
     await click("Sign in");
   await fillContact("second");
   await act(async () => document.querySelector<HTMLInputElement>('[name="email"]')!.closest("form")!.requestSubmit());
   await settle();
   expect(document.body.textContent).toContain("Second");
-  expect(document.body.textContent).toContain("Book a spot");
+  expect(document.body.textContent).toContain("Confirm one spot");
   await act(async () => pending.resolve(ok(bookingEnvelope(true), 201)));
   await settle();
   expect(document.body.textContent).not.toContain("Your spot is saved");
@@ -326,7 +340,7 @@ it("when activity details fail, Retry keeps the selection and availability stays
   await settle();
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
   expect(document.body.textContent).toContain("1 remaining");
-  expect(document.body.textContent).toContain("Sign in to book");
+  expect(document.body.textContent).toContain("Book a spot");
 });
 
 it("when booking is requested without an identity, the selection is retained and nothing is sent until identity selection completes", async () => {
@@ -355,13 +369,14 @@ it("when booking is requested without an identity, the selection is retained and
     { authenticated: false },
   );
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
-  await click("Sign in to book");
+  await click("Book a spot");
+  expect(document.querySelector('[aria-label="Checkout"]')).not.toBeNull();
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
   await fillContact("booker");
   await act(async () => document.querySelector<HTMLInputElement>('[name="email"]')!.closest("form")!.requestSubmit());
   await settle();
   expect(postCount).toBe(0);
-  expect(document.body.textContent).toContain("Book a spot");
+  expect(document.body.textContent).toContain("Confirm one spot");
 });
 
 it("when reopening with a saved booking, the receipt shows even though the activity is now full and started", async () => {
@@ -404,22 +419,37 @@ it("when reopening cannot check saved membership, only Check again is offered un
   unavailable = false;
   await click("Check again");
   await settle();
-  expect(document.body.textContent).toContain("Book again");
+  expect(document.body.textContent).toContain("Review booking");
+  await click("Review booking");
+  expect(document.querySelector('[aria-label="Checkout"]')).not.toBeNull();
   expect(posts).toBe(0);
 });
 
-it("when the saved-booking lookup expires the credential, identity recovery keeps the selected activity", async () => {
-  await mount(async (url) => {
-    if (url.endsWith("/bookings/me")) return ok({ error: { code: "session_expired", message: "Expired" } }, 401);
+it("when the saved-booking lookup expires the credential, the remembered email restores the same booking without a mutation", async () => {
+  const entries: Array<{ email: string }> = [];
+  let posts = 0;
+  await mount(async (url, init) => {
+    if (url.endsWith("/demo/sessions")) {
+      entries.push(JSON.parse(init.body!));
+      return ok({ session: { token: "restored-token", expiresAt: "2027-01-01" }, user, created: false });
+    }
+    if (url.endsWith("/bookings/me")) return init.headers.authorization === "Bearer restored-token"
+      ? ok({ booking: bookingOf() })
+      : ok({ error: { code: "session_expired", message: "Expired" } }, 401);
+    if (url.endsWith("/bookings") && init.method === "POST") posts += 1;
     if (url.endsWith("/my/activities")) return ok({ activities: [] });
     if (url.endsWith("/participants")) return ok({ error: { code: "forbidden", message: "Host only" } }, 403);
     if (url.endsWith("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
     if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
     return ok({});
   });
-  expect(localStorage.getItem("velio.session.v1")).toBeNull();
-  expect(document.querySelector('dialog[aria-label="Select your identity"]')).not.toBeNull();
+  expect(entries).toHaveLength(1);
+  expect(entries[0]!.email).toBe(user.email);
+  expect(localStorage.getItem("velio.session.v1")).toContain("restored-token");
+  expect(document.querySelector('dialog[aria-label="Select your identity"]')).toBeNull();
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
+  expect(document.body.textContent).toContain("booking-booker");
+  expect(posts).toBe(0);
 });
 
 it("when a host publication expires the credential, identity recovery retains the entered draft", async () => {
@@ -464,6 +494,7 @@ it("when selecting another activity before an old booking returns 401, the curre
     return ok({});
   });
   await click("Book a spot");
+  await click("Confirm one spot");
   const next = [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Activity b"));
   expect(next).toBeDefined();
   await act(async () => next!.click());
@@ -487,6 +518,7 @@ it("when a booking is rate limited, Book again stays disabled until Retry-After 
       return ok({});
     });
     await click("Book a spot");
+    await click("Confirm one spot");
     await settle();
     const retry = [...document.querySelectorAll("button")].find((button) => button.textContent === "Book again")!;
     expect(retry.disabled).toBe(true);
@@ -534,4 +566,120 @@ it("when a live availability frame is newer, the guest's displayed spots update 
   const renderedAck = acks.at(-1)!;
   expect(renderedAck.body).toMatchObject({ appliedVersion: "7", source: "websocket" });
   expect(renderedAck.dom).toContain("0 remaining of 2");
+});
+
+it("when a guest confirms then signs out, signing in with the same email reopens the original saved booking", async () => {
+  let saved = false;
+  let posts = 0;
+  const entries: string[] = [];
+  await mount(async (url, init) => {
+    if (url.endsWith("/demo/sessions")) {
+      entries.push(JSON.parse(init.body!).email);
+      return ok({ session: { token: "booker-token", expiresAt: "2027-01-01" }, user, created: false });
+    }
+    if (url.endsWith("/bookings") && init.method === "POST") {
+      saved = true;
+      posts += 1;
+      return ok(bookingEnvelope(true), 201);
+    }
+    if (url.endsWith("/bookings/me")) return saved && url.includes("/activities/a/") ? ok({ booking: bookingOf() }) : ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.endsWith("/my/bookings")) return ok({ bookings: saved ? [{ ...bookingOf(), activity: listItem("a") }] : [] });
+    if (url.endsWith("/my/activities")) return ok({ activities: [] });
+    if (url.endsWith("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
+    if (url.endsWith("/activities/b")) return ok({ activity: detailOf("b"), invites: {} });
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a"), listItem("b")] });
+    return ok({});
+  }, { authenticated: false });
+  await click("Book a spot");
+  await fillContact("booker@example.test");
+  await act(async () => document.querySelector('[name="email"]')!.closest("form")!.requestSubmit());
+  await settle();
+  expect(posts).toBe(0);
+  expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain(user.email);
+  await click("Confirm one spot");
+  await settle();
+  expect(document.body.textContent).toContain("booking-booker");
+  await click("Sign out");
+  expect(document.body.textContent).not.toContain("booking-booker");
+  const anotherActivity = [...document.querySelectorAll<HTMLButtonElement>(".browse-item")].find(button => button.textContent?.includes("Activity b"))!;
+  await act(async () => anotherActivity.click());
+  await settle();
+  expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity b");
+  await click("Sign in");
+  // Standalone Sign in and checkout both have an email field; use the dialog.
+  await act(async () => {
+    const input = document.querySelector<HTMLInputElement>('dialog [name="email"]')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "  BOOKER@example.test  ");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => document.querySelector('dialog [name="email"]')!.closest("form")!.requestSubmit());
+  await settle();
+  await click("My bookings");
+  await settle();
+  const savedActivity = [...document.querySelectorAll<HTMLButtonElement>(".browse-item")].find(button => button.textContent?.includes("Activity a"))!;
+  await act(async () => savedActivity.click());
+  await settle();
+  expect(document.querySelector('[aria-label="Saved booking"]')!.textContent).toContain("booking-booker");
+  expect(document.querySelector('[aria-label="Saved booking"]')!.textContent).toContain("plan-a");
+  expect(entries).toEqual(["booker@example.test", "BOOKER@example.test"]);
+  expect(posts).toBe(1);
+});
+
+it("when confirmation expires the credential, restoring access checks the saved booking without replaying confirmation", async () => {
+  let posts = 0;
+  let restored = false;
+  await mount(async (url, init) => {
+    if (url.endsWith("/demo/sessions")) {
+      restored = true;
+      return ok({ session: { token: "renewed", expiresAt: "2027-01-01" }, user, created: false });
+    }
+    if (url.endsWith("/bookings") && init.method === "POST") {
+      posts += 1;
+      return ok({ error: { code: "session_expired", message: "Expired" } }, 401);
+    }
+    if (url.endsWith("/bookings/me")) return restored
+      ? ok({ booking: bookingOf() })
+      : ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.endsWith("/my/activities")) return ok({ activities: [] });
+    if (url.endsWith("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  });
+  await click("Book a spot");
+  await click("Confirm one spot");
+  await settle();
+  expect(document.body.textContent).toContain("booking-booker");
+  expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain(user.email);
+  expect(posts).toBe(1);
+});
+
+it.each([
+  ["activity_sold_out", "This activity just filled", { remainingSpots: 0, bookedCount: 2 }],
+  ["activity_started", "This activity has already started", { started: true }],
+] as const)("when checkout confirmation returns %s, readable details remain and availability refreshes", async (code, message, changed) => {
+  let posted = false;
+  let refreshes = 0;
+  await mount(async (url, init) => {
+    if (url.endsWith("/bookings") && init.method === "POST") {
+      posted = true;
+      return ok({ error: { code, message } }, 409);
+    }
+    if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.endsWith("/my/activities")) return ok({ activities: [] });
+    if (url.endsWith("/activities/a")) {
+      if (posted) refreshes += 1;
+      return ok({ activity: detailOf("a", posted ? changed : {}), invites: {} });
+    }
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  });
+  await click("Book a spot");
+  await click("Confirm one spot");
+  await settle();
+  expect(document.body.textContent).toContain(message);
+  expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain("€10.50");
+  expect(document.body.textContent).toContain("Activity a");
+  expect(document.body.textContent).not.toContain("Your spot is saved");
+  expect([...document.querySelectorAll("button")].some(button => button.textContent === "Confirm one spot")).toBe(false);
+  expect(refreshes).toBeGreaterThan(0);
 });

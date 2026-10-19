@@ -1,3 +1,4 @@
+import { IdentityPanel } from "../IdentityPanel.js";
 import { Participants } from "../host/Participants.js";
 import { formatMoney } from "../money.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -24,14 +25,16 @@ function BookingControls({
   validityPending,
   onBook,
   onCheckAgain,
-  onNeedIdentity,
+  reviewing,
+  onReview,
 }: {
   booking: BookingState;
   detail: ActivityDetailView;
   validityPending: boolean;
   onBook: () => void;
   onCheckAgain: () => void;
-  onNeedIdentity: () => void;
+  reviewing: boolean;
+  onReview: () => void;
 }): ReactNode {
   const { state } = useSession();
   const phase = booking.phase;
@@ -58,6 +61,10 @@ function BookingControls({
             <dd>
               <code>{phase.booking.id}</code>
             </dd>
+          </div>
+          <div>
+            <dt>Plan</dt>
+            <dd><code>{phase.booking.planId}</code></dd>
           </div>
           <div>
             <dt>Saved</dt>
@@ -103,18 +110,17 @@ function BookingControls({
           {phase.message}
           {retryAt !== undefined && now < retryAt ? ` Try again in about ${Math.ceil((retryAt - now) / 1000)}s.` : ""}
           {phase.reason === "sold-out" || phase.reason === "absent" || phase.reason === "started"
-            ? " The facts below were refreshed just now."
+            ? " Availability has been refreshed."
             : ""}
         </div>
         {(phase.reason === "absent" || phase.reason === "failed" || phase.reason === "rate-limited") && (
           <>
             <button type="button" className="button-primary" onClick={onBook} disabled={!retryEnabled}>
-              {validityPending ? "Refreshing availability…" : "Book again"}
+              {validityPending ? "Refreshing availability…" : reviewing ? "Book again" : "Review booking"}
             </button>
             {phase.reason === "absent" && (
               <p className="hint">
-                A retry books again with the same request identity once availability above is
-                confirmed. Nothing is sent automatically.
+                You can try again once availability is refreshed. Nothing is sent automatically.
               </p>
             )}
           </>
@@ -161,27 +167,21 @@ function BookingControls({
       </div>
     );
   }
-  if (!ready) {
+  if (!reviewing) {
     return (
       <div className="booking-panel">
-        <button type="button" className="button-primary" onClick={onNeedIdentity}>
-          Sign in to book
-        </button>
-        <p className="hint">
-          Your selected activity stays here while you sign in.
-        </p>
+        <button type="button" className="button-primary" onClick={onReview}>Book a spot</button>
       </div>
     );
   }
+  if (!ready) {
+    if (state.status.status === "credential-lost") return null;
+    return <IdentityPanel contextNote="Your checkout is kept." />;
+  }
   return (
     <div className="booking-panel">
-      <button type="button" className="button-primary" onClick={onBook}>
-        Book a spot
-      </button>
-      <p className="hint">
-        One spot is reserved only after the server saves your booking — no payment in this
-        prototype.
-      </p>
+      <button type="button" className="button-primary" onClick={onBook}>Confirm one spot</button>
+      <p className="hint">Your spot is confirmed once your booking is saved.</p>
     </div>
   );
 }
@@ -191,7 +191,6 @@ export function GuestActivity({
   booking,
   visible,
   observationId,
-  onRequestIdentity,
   onOpenInvites,
 }: {
   activityId: string;
@@ -199,10 +198,10 @@ export function GuestActivity({
   visible: boolean;
   /** Shared per selected activity — a sibling panel's emission is a duplicate. */
   observationId: string;
-  onRequestIdentity: () => void;
   onOpenInvites: () => void;
 }): ReactNode {
   const { api, state } = useSession();
+  const [reviewing, setReviewing] = useState(false);
   const [detail, setDetail] = useState<ActivityDetailView | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -338,10 +337,16 @@ export function GuestActivity({
   }).format(new Date(detail.startsAt));
 
   return (
-    <section className="panel detail-panel" aria-labelledby="guest-detail-heading">
+    <section className="panel detail-panel" aria-labelledby={reviewing ? undefined : "guest-detail-heading"} aria-label={reviewing ? "Checkout" : "Activity"}>
+      {reviewing && (
+        <>
+          <button type="button" className="button-ghost" onClick={() => setReviewing(false)}>Back to activity</button>
+          <p className="eyebrow">{currentBooking?.phase.kind === "confirmed" ? "Your booking" : "Review your booking"}</p>
+        </>
+      )}
       <p className="eyebrow">{detail.started ? "Started" : "Upcoming"}</p>
       <h2 id="guest-detail-heading">{detail.title}</h2>
-      <p className="activity-prose">{detail.description}</p>
+      {!reviewing && <p className="activity-prose">{detail.description}</p>}
       <dl className="detail-grid">
         <div>
           <dt>Starts</dt>
@@ -361,26 +366,36 @@ export function GuestActivity({
         </div>
       </dl>
       {detail.started ? <p className="notice" role="status">Bookings closed — this activity has started.</p> : detail.remainingSpots === 0 ? <p className="notice" role="status">Sold out — every spot is booked.</p> : null}
-      <h3>Itinerary</h3>
-      <p className="activity-prose">{detail.itinerary}</p>
-      <h3>Your host · {detail.hostDisplayName}</h3>
-      <p>{detail.host?.summary || "This host has not added a background yet."}</p>
-      <h4>Previous activities</h4>
-      {detail.host?.previousActivities.length ? <ul>{detail.host.previousActivities.map(activity => <li key={activity.id}>{activity.title}</li>)}</ul> : <p className="hint">No previous activities yet.</p>}
+      {reviewing && <p>1 spot · {state.status.status === "ready" ? `Booking as ${state.status.user.email}` : "Sign in below to continue"}</p>}
+      {!reviewing && (
+        <>
+          <h3>Itinerary</h3>
+          <p className="activity-prose">{detail.itinerary}</p>
+          <h3>Your host · {detail.hostDisplayName}</h3>
+          <p>{detail.host?.summary || "This host has not added a background yet."}</p>
+          <h4>Previous activities</h4>
+          {detail.host?.previousActivities.length ? <ul>{detail.host.previousActivities.map(activity => <li key={activity.id}>{activity.title}</li>)}</ul> : <p className="hint">No previous activities yet.</p>}
+        </>
+      )}
       <LiveStatus live={live} />
-      {isOwner && <Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} />}
+      {isOwner && !reviewing && <Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} />}
       {currentBooking !== null && (
         <BookingControls
           booking={currentBooking}
           detail={detail}
           validityPending={validityPending}
           onBook={() => {
+            if (!reviewing) {
+              setReviewing(true);
+              return;
+            }
             if (sessionToken !== null) booking.submit(activityId, sessionToken);
           }}
           onCheckAgain={() => {
             if (sessionToken !== null) booking.checkAgain(activityId, sessionToken);
           }}
-          onNeedIdentity={onRequestIdentity}
+          reviewing={reviewing}
+          onReview={() => setReviewing(true)}
         />
       )}
       {(isOwner || currentBooking?.phase.kind === "confirmed") && (

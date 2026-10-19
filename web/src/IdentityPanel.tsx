@@ -19,7 +19,7 @@ export function IdentityPanel({
   const { state, store } = useSession();
   const fieldId = useId();
   const status = state.status;
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(status.status === "credential-lost" ? status.lostFrom?.email ?? "" : "");
   const [pending, setPending] = useState(false);
   const selection = useRef(0);
   useEffect(() => {
