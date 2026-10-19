@@ -397,11 +397,11 @@ describe("POST /client-events — authoritative context validation", () => {
     expect(notUuid.statusCode).toBe(400);
   });
 
-  it("preserves full and expired displayed outcomes as observations", async () => {
+  it("when unavailable invitations are displayed, full, expired and used outcomes are saved as observations", async () => {
     const host = await establish(app, "Outcomes Host");
     const activityId = await publishActivity(app, host.token, "Outcomes Activity");
     const code = await createShare(app, host.token, activityId);
-    for (const outcome of ["full", "expired"]) {
+    for (const outcome of ["full", "expired", "used"]) {
       const response = await clientEvent({
         type: "invite_opened",
         eventId: randomUUID(),
@@ -413,9 +413,9 @@ describe("POST /client-events — authoritative context validation", () => {
       expect(response.statusCode).toBe(200);
     }
     const rows = await eventsWhere(
-      "event_name = 'invite_opened' AND outcome IN ('full','expired') AND details->>'rail' = 'public_share'",
+      "event_name = 'invite_opened' AND outcome IN ('full','expired','used') AND details->>'rail' = 'public_share'",
     );
-    expect(rows.map((row) => row.outcome).sort()).toEqual(["expired", "full"]);
+    expect(rows.map((row) => row.outcome).sort()).toEqual(["expired", "full", "used"]);
   });
 
   it("stores the explicit share method with server-derived rail and assignment", async () => {

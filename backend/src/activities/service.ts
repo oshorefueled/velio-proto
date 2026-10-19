@@ -218,7 +218,7 @@ export async function listPublicActivities(deps: ActivitiesDeps): Promise<Public
 export { isActivityId } from "./domain.js";
 
 /** Inspect one activity without any identity. */
-export async function getActivity(deps: ActivitiesDeps, activityId: unknown): Promise<ActivityDetailView> {
+export async function getActivity(deps: { pool: Pick<Pool, "query"> }, activityId: unknown): Promise<ActivityDetailView> {
   if (!isActivityId(activityId)) {
     throw new ActivityNotFoundError();
   }
@@ -318,7 +318,7 @@ export async function listParticipants(
   };
 }
 
-export async function getHostContext(deps: ActivitiesDeps, activity: ActivityDetailView) {
+export async function getHostContext(deps: { pool: Pick<Pool, "query"> }, activity: ActivityDetailView) {
   const previous = await deps.pool.query<{ id: string; title: string; starts_at: Date }>(
     `SELECT id, title, starts_at FROM activities WHERE host_id=$1 AND id<>$2 AND starts_at < clock_timestamp() ORDER BY starts_at DESC`,
     [activity.hostId, activity.id],

@@ -9,7 +9,7 @@
 export type InviteRail = "public_share" | "vouch";
 
 /** Readable lifecycle state for a resolved invite (US-07). */
-export type InviteState = "claimable" | "expired" | "started" | "full" | "completed";
+export type InviteState = "claimable" | "expired" | "full" | "used";
 
 export class InviteNotFoundError extends Error {
   constructor() {
@@ -28,7 +28,7 @@ export class InviteExpiredError extends Error {
 /** A vouch claims only its named recipient (PLANS 2.5 "wrong recipient"). */
 export class InviteRecipientMismatchError extends Error {
   constructor() {
-    super("This invitation was vouched for a different contact");
+    super("This invitation was vouched for a different email");
     this.name = "InviteRecipientMismatchError";
   }
 }

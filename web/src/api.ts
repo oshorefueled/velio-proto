@@ -126,7 +126,7 @@ export interface InviteView {
   expiresAt: string;
   createdAt: string;
   /** The vouched contact, echoed to its creator only; null on public shares. */
-  targetContactKey: string | null;
+  recipientEmail: string | null;
 }
 
 /** Public invite preview (docs/client-contract.md §4): never a target contact. */
@@ -134,21 +134,12 @@ export interface InvitePreview {
   code: string;
   rail: "public_share" | "vouch";
   generation: number;
-  state: "claimable" | "expired" | "started" | "full" | "completed";
+  state: "claimable" | "expired" | "full" | "used";
   expiresAt: string;
   inviterDisplayName: string;
-  activity: {
-    id: string;
-    title: string;
-    startsAt: string;
-    timezone: string;
-    priceMinorUnits: number;
-    currency: string;
-    capacity: number;
-    bookedCount: number;
-    remainingSpots: number;
-    availabilityVersion: string;
-  };
+  activity: ActivityDetailView;
+  plan: { id: string; activityId: string; itinerary: string };
+  host: NonNullable<ActivityDetailView["host"]>;
 }
 
 export class ApiError extends Error {
@@ -264,7 +255,7 @@ export class VelioApi {
     eventId: string;
     visitorId: string;
     inviteCode: string;
-    outcome: "available" | "full" | "expired";
+    outcome: "available" | "full" | "expired" | "used";
     token?: string | null;
   }): Promise<{ event: { eventId: string; type: string; status: string } }> {
     return this.request("POST", "/client-events", {
@@ -273,6 +264,7 @@ export class VelioApi {
         eventId: input.eventId,
         visitorId: input.visitorId,
         channel: "web",
+        visitId: globalThis.sessionStorage?.getItem("velio.visit.v1") ?? undefined,
         inviteCode: input.inviteCode,
         outcome: input.outcome,
       },
@@ -293,6 +285,7 @@ export class VelioApi {
         eventId: input.eventId,
         visitorId: input.visitorId,
         channel: "web",
+        visitId: globalThis.sessionStorage?.getItem("velio.visit.v1") ?? undefined,
         inviteCode: input.inviteCode,
       },
       token: input.token,
@@ -314,7 +307,7 @@ export class VelioApi {
   createInvite(
     token: string,
     activityId: string,
-    input: { rail: "public_share" | "vouch"; targetContactKey?: string },
+    input: { rail: "public_share" | "vouch"; recipientEmail?: string },
     signal?: AbortSignal,
   ): Promise<InviteView> {
     return this.request("POST", `/activities/${activityId}/invites`, {
@@ -341,6 +334,7 @@ export class VelioApi {
         eventId: input.eventId,
         visitorId: input.visitorId,
         channel: "web",
+        visitId: globalThis.sessionStorage?.getItem("velio.visit.v1") ?? undefined,
         inviteCode: input.inviteCode,
         shareMethod: input.shareMethod,
       },

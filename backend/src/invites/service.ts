@@ -1,10 +1,11 @@
+import { getActivity, getHostContext } from "../activities/service.js";
 import { randomBytes } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { Redis } from "ioredis";
 import { appendEvent } from "../events/append.js";
 import { ActivityNotFoundError, ForbiddenError, isActivityId } from "../activities/domain.js";
-import { ActivityCompletedError, ActivitySoldOutError, ActivityStartedError } from "../booking/domain.js";
-import { ValidationError, validateContactKey } from "../identity/domain.js";
+import { ActivityStartedError } from "../booking/domain.js";
+import { ValidationError, normalizeEmail } from "../identity/domain.js";
 import { consumeFixedWindowQuota, type QuotaLimits } from "../ratelimit.js";
 import {
   CODE_ALPHABET,
@@ -16,33 +17,14 @@ import {
   type InviteState,
 } from "./domain.js";
 
-/**
- * Invitation services (PLANS.md 3.3/3.5). createPublicShare owns one
- * transaction and takes the activity row lock in the booking lock order: the
- * saved treatment assignment, the creation switch, the lifecycle gates
- * (future, spots, not completed) and the creator's host-or-booker
- * authorization are all judged against that locked row, then the invite and
- * its invite_created event commit together. An invite reserves no spot —
- * only claiming does, through the locked booking transaction.
- *
- * resolveInvite reads one consistent snapshot for anonymous preview and
- * derives the readable lifecycle state from the database clock and saved
- * availability. It never mutates anything.
- *
- * Claiming and signup acquisition never pass through the public functions:
- * the booking and identity transactions load the invite themselves
- * (findInviteForClaim / findInviteForAcquisition) so origin snapshots and
- * the booking or user row commit atomically.
- */
-
 export interface InvitesDeps {
   pool: Pool;
   redis: Redis;
   /** Creation switch: gates creation only, never issued invites or claims. */
   inviteCreationEnabled: boolean;
-  /** Configured invite lifetime in hours, capped by the activity start. */
+  /** Legacy configuration accepted by callers; invitation expiry is activity start. */
   expiryHours: number;
-  /** Finite creation quotas per identity and per IP (PLANS.md 5.2). */
+  /** Legacy caller configuration; creation does not consume a quota. */
   creationQuota: QuotaLimits;
   /** Finite resolution quota per IP. */
   resolveQuota: Pick<QuotaLimits, "perIp" | "windowSeconds">;
@@ -57,8 +39,8 @@ export interface InviteView {
   planId: string;
   expiresAt: string;
   createdAt: string;
-  /** The vouched contact, echoed to its creator only; never in previews. */
-  targetContactKey: string | null;
+  /** The recipient email, echoed to its creator only; never in previews. */
+  recipientEmail: string | null;
 }
 
 export interface InvitePreview {
@@ -68,26 +50,14 @@ export interface InvitePreview {
   state: InviteState;
   expiresAt: string;
   inviterDisplayName: string;
-  activity: {
-    id: string;
-    title: string;
-    startsAt: string;
-    timezone: string;
-    priceMinorUnits: number;
-    currency: string;
-    capacity: number;
-    bookedCount: number;
-    remainingSpots: number;
-    availabilityVersion: string;
-  };
+  activity: Awaited<ReturnType<typeof getActivity>>;
+  plan: { id: string; activityId: string; itinerary: string };
+  host: Awaited<ReturnType<typeof getHostContext>>;
 }
 
 interface CreationRow {
   id: string;
   starts_at: Date;
-  capacity: number;
-  booked_count: number;
-  completed: boolean;
   arm: string | null;
   experiment_version: string;
   affiliated: boolean;
@@ -96,24 +66,17 @@ interface CreationRow {
 }
 
 interface PreviewRow {
-  id: string;
   code: string;
   rail: InviteRail;
   generation: number;
   expires_at: Date;
   activity_id: string;
-  title: string;
-  starts_at: Date;
-  display_timezone: string;
-  price_minor_units: string;
-  currency: string;
   capacity: number;
   booked_count: number;
-  availability_version: string;
   inviter_display_name: string;
-  completed: boolean;
   started: boolean;
   expired: boolean;
+  used: boolean;
 }
 
 interface InviteRow {
@@ -129,6 +92,12 @@ interface InviteRow {
   target_contact_key: string | null;
 }
 
+function inviteView(invite: InviteRow): InviteView {
+  return { id: invite.id, code: invite.code, rail: invite.rail, generation: invite.generation,
+    activityId: invite.activity_id, planId: invite.plan_id, expiresAt: invite.expires_at.toISOString(),
+    createdAt: invite.created_at.toISOString(), recipientEmail: invite.target_contact_key };
+}
+
 /** Cryptographic draw over the typeable alphabet; byte & 31 is bias-free. */
 function generateCode(): string {
   const bytes = randomBytes(CODE_LENGTH);
@@ -139,38 +108,23 @@ function generateCode(): string {
   return code;
 }
 
-/**
- * Create an invite on either rail for an available future treatment activity.
- * The creator must be the host or hold a confirmed spot; the invite reserves
- * nothing and expires no later than the activity start. The switch gates only
- * creation: issued invites stay claimable (ticket #6 AC5). A vouch names one
- * other stable demo contact — never the creator themself — and the private
- * target is stored only on the invite row (never in events, never in
- * previews). Rail and recipient are immutable once saved.
- */
+/** Save a personal vouch or atomically retrieve/create the account's public link. */
 export async function createInvite(
   deps: InvitesDeps,
   creator: { id: string },
   activityId: unknown,
-  input: { ip: string; rail: InviteRail; targetContactKey?: unknown },
-): Promise<InviteView> {
+  input: { ip: string; rail: InviteRail; recipientEmail?: unknown },
+): Promise<InviteView & { created: boolean }> {
   if (!isActivityId(activityId)) {
     throw new ActivityNotFoundError();
   }
   let targetContactKey: string | null = null;
   if (input.rail === "vouch") {
-    targetContactKey = validateContactKey(input.targetContactKey);
-  } else if (input.targetContactKey !== undefined) {
+    targetContactKey = normalizeEmail(input.recipientEmail);
+  } else if (input.recipientEmail !== undefined) {
     // A public share names no recipient; a stray field is invalid input.
-    throw new ValidationError("public_share invites must not carry a target contact");
+    throw new ValidationError("public_share invites must not carry a recipient email");
   }
-
-  await consumeFixedWindowQuota(deps.redis, {
-    scope: "invite-create",
-    ip: input.ip,
-    userId: creator.id,
-    limits: deps.creationQuota,
-  });
 
   const client = await deps.pool.connect();
   try {
@@ -178,8 +132,7 @@ export async function createInvite(
     // Lock order per PLANS.md 3.3 step 2: the activity row first, every gate
     // judged against the locked row.
     const locked = await client.query<CreationRow>(
-      `SELECT a.id, a.starts_at, a.capacity, a.booked_count,
-              p.completed, e.arm, e.experiment_version,
+      `SELECT a.id, a.starts_at, e.arm, e.experiment_version,
               (a.host_id = $2 OR EXISTS (
                  SELECT 1 FROM bookings b
                  WHERE b.activity_id = a.id AND b.user_id = $2)) AS affiliated,
@@ -202,9 +155,18 @@ export async function createInvite(
     if (!row.affiliated) {
       throw new ForbiddenError();
     }
-    // A vouch is a personal endorsement: it cannot name its own creator.
-    if (targetContactKey !== null && targetContactKey === row.creator_contact_key) {
-      throw new ValidationError("A vouch must name a contact other than your own");
+    if (input.rail === "public_share") {
+      const existing = await client.query<InviteRow>(
+        "SELECT * FROM invites WHERE creator_id=$1 AND activity_id=$2 AND rail='public_share'",
+        [creator.id, activityId],
+      );
+      if (existing.rows[0]) {
+        await client.query("COMMIT");
+        return { ...inviteView(existing.rows[0]), created: false };
+      }
+    }
+    if (targetContactKey !== null && targetContactKey === row.creator_contact_key.trim().toLowerCase()) {
+      throw new ValidationError("A vouch must name an email other than your own");
     }
     // Control-arm activities and a switched-off creation gate refuse the
     // feature itself; neither state touches already-issued invites.
@@ -218,13 +180,6 @@ export async function createInvite(
     if (decision.rows[0]?.started) {
       throw new ActivityStartedError();
     }
-    if (row.booked_count >= row.capacity) {
-      throw new ActivitySoldOutError();
-    }
-    if (row.completed) {
-      throw new ActivityCompletedError();
-    }
-
     // The generation snapshots the inviter's signup generation plus one and
     // never changes afterwards; expiry never passes the activity start.
     const generation = row.creator_generation + 1;
@@ -233,12 +188,12 @@ export async function createInvite(
       const inserted = await client.query<InviteRow>(
         `INSERT INTO invites (code, rail, creator_id, activity_id, plan_id, generation, expires_at, target_contact_key)
          SELECT $1, $2, $3, a.id, p.id, $4,
-                LEAST(now() + make_interval(hours => $5), a.starts_at), $6
+                a.starts_at, $5
          FROM activities a JOIN plans p ON p.activity_id = a.id
-         WHERE a.id = $7
+         WHERE a.id = $6
          ON CONFLICT (code) DO NOTHING
          RETURNING id, code, rail, creator_id, activity_id, plan_id, generation, expires_at, created_at, target_contact_key`,
-        [generateCode(), input.rail, creator.id, generation, deps.expiryHours, targetContactKey, activityId],
+        [generateCode(), input.rail, creator.id, generation, targetContactKey, activityId],
       );
       invite = inserted.rows[0];
     }
@@ -261,17 +216,7 @@ export async function createInvite(
     });
 
     await client.query("COMMIT");
-    return {
-      id: invite.id,
-      code: invite.code,
-      rail: invite.rail,
-      generation: invite.generation,
-      activityId: invite.activity_id,
-      planId: invite.plan_id,
-      expiresAt: invite.expires_at.toISOString(),
-      createdAt: invite.created_at.toISOString(),
-      targetContactKey: invite.target_contact_key,
-    };
+    return { ...inviteView(invite), created: true };
   } catch (err) {
     try {
       await client.query("ROLLBACK");
@@ -290,7 +235,7 @@ export async function createPublicShare(
   creator: { id: string },
   activityId: unknown,
   input: { ip: string },
-): Promise<InviteView> {
+): Promise<InviteView & { created: boolean }> {
   return createInvite(deps, creator, activityId, { ...input, rail: "public_share" });
 }
 
@@ -310,55 +255,44 @@ export async function resolveInvite(deps: InvitesDeps, code: unknown, input: { i
   if (normalized === null) {
     throw new InviteNotFoundError();
   }
-  const result = await deps.pool.query<PreviewRow>(
-    `SELECT i.id, i.code, i.rail, i.generation, i.expires_at,
-            a.id AS activity_id, a.title, a.starts_at, a.display_timezone,
-            a.price_minor_units, a.currency, a.capacity, a.booked_count,
-            a.availability_version,
-            u.display_name AS inviter_display_name,
-            p.completed, a.starts_at <= clock_timestamp() AS started,
-            i.expires_at <= clock_timestamp() AS expired
-     FROM invites i
-     JOIN activities a ON a.id = i.activity_id
-     JOIN plans p ON p.activity_id = a.id
-     JOIN users u ON u.id = i.creator_id
-     WHERE i.code = $1`,
-    [normalized],
-  );
-  const row = result.rows[0];
-  if (!row) {
-    throw new InviteNotFoundError();
+  const client = await deps.pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const result = await client.query<PreviewRow>(
+      `SELECT i.code, i.rail, i.generation, i.expires_at,
+              a.id AS activity_id, a.capacity, a.booked_count,
+              u.display_name AS inviter_display_name,
+              a.starts_at <= clock_timestamp() AS started,
+              i.expires_at <= clock_timestamp() AS expired,
+              EXISTS (SELECT 1 FROM booking_attributions ba WHERE ba.invite_id=i.id AND ba.rail='vouch') AS used
+       FROM invites i
+       JOIN activities a ON a.id = i.activity_id
+       JOIN plans p ON p.activity_id = a.id
+       JOIN users u ON u.id = i.creator_id
+       WHERE i.code = $1`,
+      [normalized],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new InviteNotFoundError();
+    }
+    const state: InviteState = row.used ? "used" : row.started || row.expired ? "expired"
+      : row.booked_count >= row.capacity ? "full" : "claimable";
+    const activityDeps = { pool: client };
+    const activity = await getActivity(activityDeps, row.activity_id);
+    const host = await getHostContext(activityDeps, activity);
+    await client.query("COMMIT");
+    return {
+      code: row.code, rail: row.rail, generation: row.generation, state,
+      expiresAt: row.expires_at.toISOString(), inviterDisplayName: row.inviter_display_name,
+      activity, plan: { id: activity.planId, activityId: activity.id, itinerary: activity.itinerary }, host,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-  const remainingSpots = row.capacity - row.booked_count;
-  const state: InviteState = row.started
-    ? "started"
-    : row.expired
-      ? "expired"
-      : row.completed
-        ? "completed"
-        : remainingSpots <= 0
-          ? "full"
-          : "claimable";
-  return {
-    code: row.code,
-    rail: row.rail,
-    generation: row.generation,
-    state,
-    expiresAt: row.expires_at.toISOString(),
-    inviterDisplayName: row.inviter_display_name,
-    activity: {
-      id: row.activity_id,
-      title: row.title,
-      startsAt: row.starts_at.toISOString(),
-      timezone: row.display_timezone,
-      priceMinorUnits: Number(row.price_minor_units),
-      currency: row.currency,
-      capacity: row.capacity,
-      bookedCount: row.booked_count,
-      remainingSpots,
-      availabilityVersion: row.availability_version,
-    },
-  };
 }
 
 export type InviteClaimLookup =

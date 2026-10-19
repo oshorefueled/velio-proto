@@ -51,7 +51,7 @@ beforeAll(async () => {
 
 function uniqueContact(prefix: string): string {
   nextContact += 1;
-  return `${prefix}-${Date.now()}-${nextContact}`;
+  return `${prefix}-${Date.now()}-${nextContact}@example.test`;
 }
 
 function uniqueIp(): string {
@@ -79,11 +79,11 @@ async function publishTreatment(title: string, spots = 5): Promise<string> {
   return result.activity.id;
 }
 
-async function createVouch(creator: UserSnapshot, activityId: string, targetContactKey: string) {
+async function createVouch(creator: UserSnapshot, activityId: string, recipientEmail: string) {
   return createInvite(invites, creator, activityId, {
     ip: uniqueIp(),
     rail: "vouch",
-    targetContactKey,
+    recipientEmail,
   });
 }
 
@@ -92,7 +92,7 @@ describe("vouch invites", () => {
     const activityId = await publishTreatment("Vouch Creation");
     const target = uniqueContact("friend");
     const vouch = await createVouch(host, activityId, target);
-    expect(vouch).toMatchObject({ rail: "vouch", generation: 1, targetContactKey: target });
+    expect(vouch).toMatchObject({ rail: "vouch", generation: 1, recipientEmail: target });
 
     // Stored immutably with the target; the invite_created event carries no
     // private target identifier.
@@ -126,7 +126,7 @@ describe("vouch invites", () => {
       createInvite(invites, host, activityId, {
         ip: uniqueIp(),
         rail: "public_share",
-        targetContactKey: uniqueContact("stray"),
+        recipientEmail: uniqueContact("stray"),
       }),
     ).rejects.toMatchObject({ name: "ValidationError" });
   });

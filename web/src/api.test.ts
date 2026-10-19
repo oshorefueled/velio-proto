@@ -109,21 +109,21 @@ it("when invite creation answers its saved-invite envelope, createInvite exposes
           planId: "plan-a",
           expiresAt: "2026-12-01T18:00:00Z",
           createdAt: "2026-10-18T21:00:00Z",
-          targetContactKey: "t16-friend",
+          recipientEmail: "friend@example.test",
         },
       },
     };
   });
   const invite = await api.createInvite("host-token", "activity-a", {
     rail: "vouch",
-    targetContactKey: "t16-friend",
+    recipientEmail: "friend@example.test",
   });
   expect(capturedBody).toBe(
-    JSON.stringify({ rail: "vouch", targetContactKey: "t16-friend" }),
+    JSON.stringify({ rail: "vouch", recipientEmail: "friend@example.test" }),
   );
   expect(invite.code).toBe("0ABCDEFHJKM2");
   expect(invite.rail).toBe("vouch");
-  expect(invite.targetContactKey).toBe("t16-friend");
+  expect(invite.recipientEmail).toBe("friend@example.test");
   expect(invite.activityId).toBe("activity-a");
 });
 
@@ -186,7 +186,7 @@ it("when a public code resolves, resolveInvite exposes the literal public previe
   expect(preview.rail).toBe("public_share");
   expect(preview.inviterDisplayName).toBe("T16 Booker");
   expect(preview.activity.remainingSpots).toBe(1);
-  expect((preview as unknown as Record<string, unknown>).targetContactKey).toBeUndefined();
+  expect((preview as unknown as Record<string, unknown>).recipientEmail).toBeUndefined();
 });
 
 it("when a claim carries an invite code, the booking body includes it; a direct booking body stays exact", async () => {

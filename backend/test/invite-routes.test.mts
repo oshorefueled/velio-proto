@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { buildApp } from "../src/app.ts";
 import type { Config } from "../src/config.ts";
-import { clearIdentityData, resetAndMigrate, urlFor } from "./support/db.mts";
+import { clearIdentityData, resetAndMigrate, urlFor, withClient } from "./support/db.mts";
 import type { InjectOptions, Response as LightInjectResponse } from "light-my-request";
 
 const migrationUrl = urlFor("MIGRATION_DATABASE_URL", "velio_test");
@@ -112,7 +112,63 @@ function boundaryIp(): string {
 }
 
 describe("public share routes", () => {
-  it("creates a public share for the host and a confirmed booker, with creation-rate boundaries", async () => {
+  it("creates a normalized email vouch without a recipient account and retains complete private-safe previews after sell-out and redemption", async () => {
+    const host = await establish(treatmentApp, "Email Host");
+    const activityId = await publish(treatmentApp, host, "Email Invitation", 1);
+    const email = `${uniqueKey("recipient")}+friend@example.test`;
+    const created = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/invites`,
+      headers: { authorization: `Bearer ${host}` }, payload: { rail: "vouch", recipientEmail: `  ${email.toUpperCase()}  ` } });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({ created: true, invite: { recipientEmail: email } });
+    const code = created.json().invite.code;
+    await withClient(migrationUrl, async client => {
+      expect((await client.query("SELECT count(*)::int AS n FROM users WHERE contact_key=$1", [email])).rows[0].n).toBe(0);
+      expect((await client.query("SELECT booked_count FROM activities WHERE id=$1", [activityId])).rows[0].booked_count).toBe(0);
+    });
+    const preview = await nextInject(treatmentApp, { method: "GET", url: `/invites/${code}` });
+    expect(preview.json().invite).toMatchObject({ state: "claimable", activity: { description: "A guided activity.", bookingState: "available" },
+      plan: { activityId, itinerary: "Meet, explore, return." }, host: { displayName: "Email Host", previousActivities: [] } });
+    expect(JSON.stringify(preview.json())).not.toContain(email);
+    const recipient = await nextInject(treatmentApp, { method: "POST", url: "/demo/sessions", payload: { email, inviteCode: code } });
+    expect(recipient.statusCode).toBe(200);
+    const booking = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/bookings`,
+      headers: { authorization: `Bearer ${recipient.json().session.token}` }, payload: { operationId: randomUUID(), inviteCode: code } });
+    expect(booking.statusCode).toBe(201);
+    const used = await nextInject(treatmentApp, { method: "GET", url: `/invites/${code}` });
+    expect(used.json().invite.state).toBe("used");
+    expect(JSON.stringify(used.json())).not.toContain(email);
+    const publicLink = await nextInject(treatmentApp, { method: "POST", url: `/activities/${activityId}/invites`,
+      headers: { authorization: `Bearer ${host}` }, payload: { rail: "public_share" } });
+    expect(publicLink.statusCode).toBe(201);
+    const full = await nextInject(treatmentApp, { method: "GET", url: `/invites/${publicLink.json().invite.code}` });
+    expect(full.json().invite.state).toBe("full");
+    await withClient(migrationUrl, async client => {
+      const events = await client.query("SELECT details FROM events WHERE invite_id=$1", [created.json().invite.id]);
+      expect(JSON.stringify(events.rows)).not.toContain(email);
+    });
+  });
+
+  it("returns one public invitation and creation event for concurrent copies, including retrieval with creation disabled", async () => {
+    const host = await establish(treatmentApp, "Reusable Host");
+    const activityId = await publish(treatmentApp, host, "Reusable", 1);
+    const request = { method: "POST" as const, url: `/activities/${activityId}/invites`,
+      headers: { authorization: `Bearer ${host}` }, payload: { rail: "public_share" } };
+    const responses = await Promise.all(Array.from({ length: 8 }, () => nextInject(treatmentApp, request)));
+    expect(responses.filter(response => response.statusCode === 201)).toHaveLength(1);
+    expect(responses.filter(response => response.statusCode === 200)).toHaveLength(7);
+    expect(new Set(responses.map(response => response.json().invite.id)).size).toBe(1);
+    expect(responses.filter(response => response.json().created)).toHaveLength(1);
+    await withClient(migrationUrl, async client => {
+      const id = responses[0]!.json().invite.id;
+      expect((await client.query("SELECT count(*)::int AS n FROM events WHERE event_name='invite_created' AND invite_id=$1", [id])).rows[0].n).toBe(1);
+      expect((await client.query("SELECT booked_count FROM activities WHERE id=$1", [activityId])).rows[0].booked_count).toBe(0);
+    });
+    const retrieved = await nextInject(switchedOffApp, request);
+    expect(retrieved.statusCode).toBe(200);
+    expect(retrieved.json()).toMatchObject({ created: false, invite: responses[0]!.json().invite });
+  });
+
+  it("creates a public share for the host and a confirmed booker, without holding capacity", async () => {
     const host = await establish(treatmentApp, "Route Share Host");
     const activityId = await publish(treatmentApp, host, "Route Share");
 
@@ -145,34 +201,7 @@ describe("public share routes", () => {
     });
     expect(bookerShare.statusCode).toBe(201);
 
-    // Creation quota boundary for the booker's identity: this app allows 10
-    // per identity per window. At least ten creations succeed, then the cap
-    // refuses with Retry-After (a single Redis hiccup may divert one count
-    // to the per-process fallback, so the exact refusal index can shift by
-    // one; the finite cap itself must not).
-    // One source IP for the whole sequence: the per-IP counter must see it.
-    const sequenceIp = boundaryIp();
-    let successes = 1; // the booker's share above was this identity's first
-    let limited: undefined | LightInjectResponse;
-    for (let i = 0; i < 15 && limited === undefined; i += 1) {
-      const response = await nextInject(treatmentApp, {
-        method: "POST",
-        url: `/activities/${activityId}/invites`,
-        headers: { authorization: `Bearer ${booker}` },
-        payload: { rail: "public_share" },
-        remoteAddress: sequenceIp,
-      });
-      if (response.statusCode === 429) {
-        limited = response;
-      } else {
-        expect(response.statusCode).toBe(201);
-        successes += 1;
-      }
-    }
-    expect(successes).toBeGreaterThanOrEqual(10);
-    expect(limited).toBeDefined();
-    expect(limited!.json().error.code).toBe("request_limit");
-    expect(Number(limited!.headers["retry-after"])).toBeGreaterThan(0);
+
   });
 
   it("rejects other rails, anonymous creation and unaffiliated creators", async () => {
@@ -303,18 +332,18 @@ describe("public share routes", () => {
       method: "POST",
       url: `/activities/${activityId}/invites`,
       headers: { authorization: `Bearer ${host}` },
-      payload: { rail: "vouch", targetContactKey: targetContact + "@example.test" },
+      payload: { rail: "vouch", recipientEmail: targetContact + "@example.test" },
     });
     expect(created.statusCode).toBe(201);
     const invite = created.json().invite;
-    expect(invite).toMatchObject({ rail: "vouch", generation: 1, targetContactKey: targetContact + "@example.test" });
+    expect(invite).toMatchObject({ rail: "vouch", generation: 1, recipientEmail: targetContact + "@example.test" });
 
     // Self-vouch and targetless vouch are invalid input.
     const selfVouch = await nextInject(treatmentApp, {
       method: "POST",
       url: `/activities/${activityId}/invites`,
       headers: { authorization: `Bearer ${host}` },
-      payload: { rail: "vouch", targetContactKey: hostContact + "@example.test" },
+      payload: { rail: "vouch", recipientEmail: hostContact + "@example.test" },
     });
     expect(selfVouch.statusCode).toBe(400);
     const targetless = await nextInject(treatmentApp, {

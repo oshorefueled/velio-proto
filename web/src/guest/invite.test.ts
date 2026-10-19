@@ -105,7 +105,7 @@ const detailOf = (id: string, over: Record<string, unknown> = {}) => ({
   started: false,
   ...over,
 });
-const inviteOf = (rail: "public_share" | "vouch", targetContactKey: string | null) => ({
+const inviteOf = (rail: "public_share" | "vouch", recipientEmail: string | null) => ({
   id: "invite-1",
   code: "0ABCDEFHJKM2",
   rail,
@@ -114,7 +114,7 @@ const inviteOf = (rail: "public_share" | "vouch", targetContactKey: string | nul
   planId: "plan-a",
   expiresAt: "2026-12-01T18:00:00Z",
   createdAt: "2026-10-18T21:00:00Z",
-  targetContactKey,
+  recipientEmail,
 });
 const hostedActivity = (id: string) => ({ ...listItem(id), confirmedCount: 0 });
 function ok(json: unknown, status = 200): { status: number; json: unknown } {
@@ -187,7 +187,8 @@ function inviteTransport(over: {
     }
     if (url.endsWith("/invites") && init.method === "POST") {
       if (over.create) return over.create(url, init);
-      return ok({ invite: inviteOf("public_share", null) }, 201);
+      const input = JSON.parse(init.body ?? "{}");
+      return ok({ invite: inviteOf(input.rail, input.recipientEmail ?? null) }, 201);
     }
     if (url.endsWith("/my/activities")) return ok({ activities: over.hosted ?? [] });
     if (url.endsWith("/bookings/me")) return over.myBooking ?? ok({ error: { code: "booking_not_found", message: "none" } }, 404);
@@ -215,22 +216,22 @@ it("when the owning host creates a vouch, the saved receipt names the contact an
       hosted: [hostedActivity("a")],
       create: async (_url, init) => {
         postBodies.push(init.body ?? "");
-        return ok({ invite: inviteOf("vouch", "t16-friend") }, 201);
+        return ok({ invite: inviteOf("vouch", "friend@example.test") }, 201);
       },
     }),
     { session: hostUser, view: "invites" },
   );
   await chooseRail("vouch");
-  await fillContact("t16-friend");
-  await click("Create invitation");
+  await fillContact("friend@example.test");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await settle();
-  expect(postBodies).toEqual([JSON.stringify({ rail: "vouch", targetContactKey: "t16-friend" })]);
+  expect(postBodies).toEqual([JSON.stringify({ rail: "vouch", recipientEmail: "friend@example.test" })]);
   const body = document.body.textContent ?? "";
   expect(body).toContain("Invitation saved");
-  expect(body).toContain("Contact vouch for t16-friend");
+  expect(body).toContain("Personal invitation for friend@example.test");
   expect(body).toContain("0ABCDEFHJKM2");
   expect(body).toContain("nobody holds a spot");
-  expect(body).toContain("only that contact can claim it");
+  expect(body).toContain("only that email can use it");
 });
 
 it("when a confirmed booker creates a public share, the receipt shows reach without endorsement and the canonical link", async () => {
@@ -242,7 +243,7 @@ it("when a confirmed booker creates a public share, the receipt shows reach with
     }),
     { session: bookerUser, view: "invites" },
   );
-  await click("Create invitation");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await settle();
   const body = document.body.textContent ?? "";
   expect(body).toContain("Public share link — anyone with the link can use it while valid");
@@ -302,18 +303,13 @@ it("when the plan is control, switched off, full or started, the matching explan
   });
   expect(document.body.textContent).toContain("control group");
   expect(document.body.textContent).not.toContain("Create invitation");
-  await mount(inviteTransport({ detail: ok({ activity: detailOf("a"), invites: { eligible: true, canCreateInvites: false, arm: "treatment", experimentVersion: "v1" } }) }), {
+  await mount(inviteTransport({ hosted: [hostedActivity("a")], detail: ok({ activity: detailOf("a"), invites: { eligible: true, canCreateInvites: false, arm: "treatment", experimentVersion: "v1" } }) }), {
     session: bookerUser,
     view: "invites",
   });
   expect(document.body.textContent).toContain("switched off");
   expect(document.body.textContent).not.toContain("Create invitation");
-  await mount(inviteTransport({ detail: ok({ activity: detailOf("a", { remainingSpots: 0, bookedCount: 2 }), invites: { eligible: true, canCreateInvites: true, arm: "treatment", experimentVersion: "v1" } }), create: postGuard }), {
-    session: bookerUser,
-    view: "invites",
-  });
-  expect(document.body.textContent).toContain("This activity is full — new invitations are closed.");
-  await mount(inviteTransport({ detail: ok({ activity: detailOf("a", { started: true }), invites: { eligible: true, canCreateInvites: true, arm: "treatment", experimentVersion: "v1" } }), create: postGuard }), {
+  await mount(inviteTransport({ hosted: [hostedActivity("a")], detail: ok({ activity: detailOf("a", { started: true }), invites: { eligible: true, canCreateInvites: true, arm: "treatment", experimentVersion: "v1" } }), create: postGuard }), {
     session: bookerUser,
     view: "invites",
   });
@@ -331,14 +327,14 @@ it("while creation is in flight, submit stays disabled and a second click sends 
     { session: hostUser, view: "invites" },
   );
   await chooseRail("vouch");
-  await fillContact("t16-friend");
-  await click("Create invitation");
+  await fillContact("friend@example.test");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   const creating = [...document.querySelectorAll("button")].find((b) => b.textContent === "Creating…");
   expect(creating).toBeDefined();
   expect(creating!.disabled).toBe(true);
   await act(async () => creating!.click());
   expect(postBodies).toHaveLength(0);
-  await act(async () => pending.resolve(ok({ invite: inviteOf("vouch", "t16-friend") }, 201)));
+  await act(async () => pending.resolve(ok({ invite: inviteOf("vouch", "friend@example.test") }, 201)));
   await settle();
   expect(document.body.textContent).toContain("Invitation saved");
 });
@@ -352,20 +348,20 @@ it("when creation fails before an answer, the chosen contact is kept, no phantom
       create: async (_url, init) => {
         postBodies.push(init.body ?? "");
         if (fail) throw new TypeError("network unreachable");
-        return ok({ invite: inviteOf("vouch", "t16-friend") }, 201);
+        return ok({ invite: inviteOf("vouch", "friend@example.test") }, 201);
       },
     }),
     { session: hostUser, view: "invites" },
   );
   await chooseRail("vouch");
-  await fillContact("t16-friend");
-  await click("Create invitation");
+  await fillContact("friend@example.test");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await settle();
   const bodyAfterFailure = document.body.textContent ?? "";
   expect(bodyAfterFailure).toContain("cannot tell whether the invitation was saved");
   expect(bodyAfterFailure).not.toContain("Invitation saved");
   expect(bodyAfterFailure).not.toContain("0ABCDEFHJKM2");
-  expect((document.querySelector("#vouch-contact") as HTMLInputElement).value).toBe("t16-friend");
+  expect((document.querySelector("#vouch-contact") as HTMLInputElement).value).toBe("friend@example.test");
   fail = false;
   await click("Try again");
   await settle();
@@ -385,8 +381,8 @@ it("when a delayed creation succeeds after an identity switch, no receipt attach
     { session: hostUser, view: "invites" },
   );
   await chooseRail("vouch");
-  await fillContact("t16-friend");
-  await click("Create invitation");
+  await fillContact("friend@example.test");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await click("Sign out");
     await click("Sign in");
   await act(async () => {
@@ -398,7 +394,7 @@ it("when a delayed creation succeeds after an identity switch, no receipt attach
   await act(async () => document.querySelector<HTMLInputElement>('[name="email"]')!.closest("form")!.requestSubmit());
   await settle();
   expect(document.body.textContent).toContain("Second");
-  await act(async () => pending.resolve(ok({ invite: inviteOf("vouch", "t16-friend") }, 201)));
+  await act(async () => pending.resolve(ok({ invite: inviteOf("vouch", "friend@example.test") }, 201)));
   await settle();
   expect(document.body.textContent).not.toContain("Invitation saved");
 });
@@ -415,8 +411,8 @@ it("when a late 401 arrives after an identity switch, the newer session stays in
     { session: hostUser, view: "invites" },
   );
   await chooseRail("vouch");
-  await fillContact("t16-friend");
-  await click("Create invitation");
+  await fillContact("friend@example.test");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await click("Sign out");
     await click("Sign in");
   await act(async () => {
@@ -445,8 +441,8 @@ it("when the copy succeeds, invite_share_action records copy exactly; failure an
   });
   await mount(inviteTransport({ hosted: [hostedActivity("a")], events }), { session: hostUser, view: "invites" });
   await chooseRail("vouch");
-  await fillContact("t16-friend");
-  await click("Create invitation");
+  await fillContact("friend@example.test");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await settle();
   await click("Copy code");
   await settle();
@@ -457,6 +453,7 @@ it("when the copy succeeds, invite_share_action records copy exactly; failure an
     eventId: JSON.parse(events[0]!).eventId,
     visitorId: expect.any(String),
     channel: "web",
+    visitId: expect.any(String),
     inviteCode: "0ABCDEFHJKM2",
     shareMethod: "copy",
   });
@@ -476,7 +473,7 @@ it("when a supported share resolves, system_share is recorded; cancellation reco
   Object.defineProperty(navigator, "share", { configurable: true, value: () => Promise.resolve() });
   await mount(inviteTransport({ hosted: [hostedActivity("a")], events }), { session: hostUser, view: "invites" });
   await chooseRail("public_share");
-  await click("Create invitation");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await settle();
   await click("Share via device");
   await settle();
@@ -496,7 +493,7 @@ it("without device sharing the panel says so honestly and records nothing", asyn
   const events: string[] = [];
   await mount(inviteTransport({ hosted: [hostedActivity("a")], events }), { session: hostUser, view: "invites" });
   await chooseRail("public_share");
-  await click("Create invitation");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await settle();
   await click("Share via device");
   await settle();
@@ -542,30 +539,30 @@ it("when the owning host opens their detail, the host entry leads to the same in
 });
 
 it("when the creator switches identity after saving an invitation, the private receipt clears and identity selection is required", async () => {
-  await mount(inviteTransport({ hosted: [hostedActivity("a")], create: () => ok({ invite: inviteOf("vouch", "t16-friend") }, 201) }), { session: hostUser, view: "invites" });
+  await mount(inviteTransport({ hosted: [hostedActivity("a")], create: () => ok({ invite: inviteOf("vouch", "friend@example.test") }, 201) }), { session: hostUser, view: "invites" });
   await chooseRail("vouch");
-  await fillContact("t16-friend");
-  await click("Create invitation");
+  await fillContact("friend@example.test");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await settle();
   expect(document.body.textContent).toContain("Invitation saved");
   await click("Sign out");
     await click("Sign in");
   await settle();
   expect(document.body.textContent).not.toContain("0ABCDEFHJKM2");
-  expect(document.body.textContent).toContain("Select identity to invite");
+  expect(document.body.textContent).toContain("Sign in to invite");
 });
 
 it("when the contact changes during creation, the delayed receipt cannot replace the new draft", async () => {
   const pending = deferred<{ status: number; json: unknown }>();
   await mount(inviteTransport({ hosted: [hostedActivity("a")], create: () => pending.promise }), { session: hostUser, view: "invites" });
   await chooseRail("vouch");
-  await fillContact("t16-friend");
-  await click("Create invitation");
-  await fillContact("t16-another-friend");
-  await act(async () => pending.resolve(ok({ invite: inviteOf("vouch", "t16-friend") }, 201)));
+  await fillContact("friend@example.test");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
+  await fillContact("another@example.test");
+  await act(async () => pending.resolve(ok({ invite: inviteOf("vouch", "friend@example.test") }, 201)));
   await settle();
   expect(document.body.textContent).not.toContain("Invitation saved");
-  expect((document.querySelector("#vouch-contact") as HTMLInputElement).value).toBe("t16-another-friend");
+  expect((document.querySelector("#vouch-contact") as HTMLInputElement).value).toBe("another@example.test");
 });
 
 it("when creation is rate limited, another submit waits until Retry-After elapses and preserves the contact", async () => {
@@ -579,15 +576,15 @@ it("when creation is rate limited, another submit waits until Retry-After elapse
     return inviteTransport({ hosted: [hostedActivity("a")] })(url, init);
   }, { session: hostUser, view: "invites" });
   await chooseRail("vouch");
-  await fillContact("t16-friend");
-  await click("Create invitation");
+  await fillContact("friend@example.test");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await settle();
-  await click("Create invitation");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   expect(attempts).toBe(1);
-  expect((document.querySelector("#vouch-contact") as HTMLInputElement).value).toBe("t16-friend");
+  expect((document.querySelector("#vouch-contact") as HTMLInputElement).value).toBe("friend@example.test");
   clock.mockReturnValue(3001);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2050)); });
-  await click("Create invitation");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   expect(attempts).toBe(2);
 });
 
@@ -601,7 +598,7 @@ it("when an old creation fails while the new identity is creating, the old error
     if (url.endsWith("/demo/sessions")) return ok({ session: { token: "second-token", expiresAt: "2027-01-01" }, user: secondUser, created: false });
     return inviteTransport({ hosted: [hostedActivity("a")] })(url, init);
   }, { session: hostUser, view: "invites" });
-  await click("Create invitation");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   await click("Sign out");
     await click("Sign in");
   await act(async () => {
@@ -611,7 +608,7 @@ it("when an old creation fails while the new identity is creating, the old error
   });
   await act(async () => document.querySelector<HTMLInputElement>('[name="email"]')!.closest("form")!.requestSubmit());
   await settle();
-  await click("Create invitation");
+  await click(document.querySelector<HTMLInputElement>('input[value="vouch"]')?.checked ? "Invite someone" : "Copy public link");
   expect(attempts).toBe(2);
   await act(async () => old.resolve(ok({ error: { code: "validation_error", message: "Old contact invalid" } }, 400)));
   await settle();
@@ -621,4 +618,38 @@ it("when an old creation fails while the new identity is creating, the old error
   await act(async () => next.resolve(ok({ invite: inviteOf("public_share", null) }, 201)));
   await settle();
   expect(document.body.textContent).toContain("Invitation saved");
+});
+
+
+it("when a full activity's host copies publicly twice, each click retrieves the saved link and only clipboard success records sharing", async () => {
+  const writes: string[] = [];
+  const events: string[] = [];
+  let requests = 0;
+  let unavailable = false;
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text: string) => { writes.push(text); } } });
+  await mount(inviteTransport({ hosted: [hostedActivity("a")], events,
+    detail: ok({ activity: detailOf("a", { remainingSpots: 0, bookedCount: 2 }), invites: { eligible: true, canCreateInvites: true, arm: "treatment" } }),
+    create: () => { requests++; if (unavailable) throw new TypeError("API unavailable"); return ok({ invite: inviteOf("public_share", null), created: requests === 1 }, requests === 1 ? 201 : 200); }
+  }), { session: hostUser, view: "invites" });
+  await click("Copy public link");
+  await settle();
+  expect(writes).toHaveLength(1);
+  expect(document.body.textContent).toContain("Link copied");
+  await click("Copy public link");
+  await settle();
+  expect(requests).toBe(2);
+  expect(writes).toEqual([writes[0], writes[0]]);
+  expect(events.filter(raw => JSON.parse(raw).type === "invite_share_action")).toHaveLength(2);
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("Clipboard denied"); } } });
+  await click("Copy public link");
+  await settle();
+  expect(document.body.textContent).toContain("Copying was not available");
+  expect(document.body.textContent).toContain("0ABCDEFHJKM2");
+  expect(document.body.textContent).not.toContain("Link copied");
+  unavailable = true;
+  await click("Copy public link");
+  await settle();
+  expect(document.body.textContent).toContain("Your saved link is still shown above");
+  expect(document.body.textContent).toContain("0ABCDEFHJKM2");
+  expect(events.filter(raw => JSON.parse(raw).type === "invite_share_action")).toHaveLength(2);
 });

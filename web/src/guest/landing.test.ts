@@ -107,7 +107,7 @@ async function fillContact(key: string) {
   });
 }
 type PreviewOverride = Partial<{
-  state: "claimable" | "expired" | "started" | "full" | "completed";
+  state: "claimable" | "expired" | "full" | "used";
   rail: "public_share" | "vouch";
   remainingSpots: number;
   inviterDisplayName: string;
@@ -120,9 +120,12 @@ function previewFixture(code: string, over: PreviewOverride = {}) {
     state: over.state ?? "claimable",
     expiresAt: "2026-12-01T18:00:00Z",
     inviterDisplayName: over.inviterDisplayName ?? "Inviter Name",
+    plan: { id: "p", activityId: "a", itinerary: "Meet at the gate, then walk together." },
+    host: { id: "host", displayName: "Walk Host", summary: "Local guide", previousActivities: [] },
     activity: {
       id: "a",
       title: "Evening walk",
+      description: "Explore the city at sunset.",
       startsAt: "2026-12-01T18:00:00Z",
       timezone: "Europe/Stockholm",
       priceMinorUnits: 1200,
@@ -192,19 +195,20 @@ it("when an anonymous visitor opens a claimable invite, the facts show before id
   const body = document.body.textContent ?? "";
   expect(body).toContain("Evening walk");
   expect(body).toContain("Inviter Name");
-  expect(body).toContain("Public share — anyone with the link can use it while valid");
+  expect(body).toContain("Public link — anyone can book while spots remain");
   expect(body).toContain("1 booked · 1 remaining of 2");
-  expect(body).toContain("Select identity to claim");
+  expect(body).toContain("Sign in to continue");
   expect(events).toHaveLength(1);
   expect(JSON.parse(events[0]!)).toEqual({
     type: "invite_opened",
     eventId: JSON.parse(events[0]!).eventId,
     visitorId: JSON.parse(events[0]!).visitorId,
     channel: "web",
+    visitId: expect.any(String),
     inviteCode: "8WKWE7DG82VR",
     outcome: "available",
   });
-  await click("Select identity to claim");
+  await click("Sign in to continue");
   await fillContact("guest");
   await act(async () => document.querySelector<HTMLInputElement>('[name="email"]')!.closest("form")!.requestSubmit());
   await settle();
@@ -214,7 +218,7 @@ it("when an anonymous visitor opens a claimable invite, the facts show before id
 it("when a vouch is previewed, no target contact is disclosed anywhere", async () => {
   await mount(landingTransport({ preview: ok({ invite: previewFixture("V", { rail: "vouch" }) }) }), { invite: "V" });
   const body = document.body.textContent ?? "";
-  expect(body).toContain("Contact vouch — a personal endorsement; only the invited contact can claim it");
+  expect(body).toContain("Personal invitation — use the email that was invited");
   expect(body).not.toContain("target");
   expect(document.body.innerHTML).not.toContain("secret-contact");
 });
@@ -248,7 +252,7 @@ it("when a claim is created through identity selection, the invitation travels t
   const bookingPosts: string[] = [];
   const sessionBodies: string[] = [];
   await mount(landingTransport({ events, bookingPosts, sessionBodies }), { session: null });
-  await click("Select identity to claim");
+  await click("Sign in to continue");
   await fillContact("guest");
   await act(async () => document.querySelector<HTMLInputElement>('[name="email"]')!.closest("form")!.requestSubmit());
   await settle();
@@ -261,8 +265,8 @@ it("when a claim is created through identity selection, the invitation travels t
   expect(claimEvents).toContain("claim_started");
   const body = document.body.textContent ?? "";
   expect(body).toContain("Your spot is saved");
-  expect(body).toContain("public_share");
-  expect(body).toContain("generation 2");
+  expect(body).toContain("booking-guest");
+  expect(body).not.toContain("generation 2");
 });
 
 it("when a pending claim is in flight, submit stays disabled and a second click sends no second request", async () => {
@@ -274,7 +278,7 @@ it("when a pending claim is in flight, submit stays disabled and a second click 
       booking: () => pending.promise,
     }),
   );
-  await click("Select identity to claim");
+  await click("Sign in to continue");
   await fillContact("guest");
   await act(async () => document.querySelector<HTMLInputElement>('[name="email"]')!.closest("form")!.requestSubmit());
   await settle();
@@ -318,7 +322,7 @@ it("when the invite has expired but the visitor already holds the booking, the s
     { session: guestUser },
   );
   const body = document.body.textContent ?? "";
-  expect(body).toContain("This invitation has expired, so it cannot be claimed.");
+  expect(body).toContain("Booking is closed because this invitation has expired.");
   expect(body).toContain("Your spot is saved");
   expect(body).toContain("booking-guest");
   const opened = events.map((e) => JSON.parse(e));
@@ -477,15 +481,15 @@ it("when a claim hits a vouch meant for another contact, the reason explains wit
   expect(document.body.innerHTML).not.toContain("secret-contact");
 });
 
-it("when the landing shows started or completed states, no opened outcome is invented", async () => {
+it("when a used vouch is displayed, its useful facts remain and a used opening is recorded", async () => {
   const events: string[] = [];
-  await mount(landingTransport({ preview: ok({ invite: previewFixture("8WKWE7DG82VR", { state: "started" }) }), events }), {
+  await mount(landingTransport({ preview: ok({ invite: previewFixture("8WKWE7DG82VR", { state: "used" }) }), events }), {
     session: guestUser,
   });
   const body = document.body.textContent ?? "";
-  expect(body).toContain("The activity has already started");
+  expect(body).toContain("This personal invitation has already been used");
   expect(body).not.toContain("Claim your spot");
-  expect(events).toHaveLength(0);
+  expect(events.map(raw => JSON.parse(raw).outcome)).toEqual(["used"]);
 });
 
 it("when a stored activity differs from the invite, only the invite booking lookup runs", async () => {
@@ -501,7 +505,7 @@ it("when a stored activity differs from the invite, only the invite booking look
   expect(document.querySelector(".invite-landing")?.textContent).toContain("Claim your spot");
 });
 
-it("when invite facts commit, activity views emit once across identity selection", async () => {
+it("when the displayed invitation account changes, a new activity observation uses a distinct event ID", async () => {
   const views: unknown[] = [];
   const base = landingTransport();
   await mount(async (url, init) => {
@@ -512,11 +516,12 @@ it("when invite facts commit, activity views emit once across identity selection
     return base(url, init);
   });
   expect(views).toHaveLength(1);
-  await click("Select identity to claim");
+  await click("Sign in to continue");
   await fillContact("guest");
   await act(async () => document.querySelector<HTMLInputElement>('[name="email"]')!.closest("form")!.requestSubmit());
   await settle();
-  expect(views).toHaveLength(1);
+  expect(views).toHaveLength(2);
+  expect(new Set(views.map(raw => (raw as { eventId: string }).eventId)).size).toBe(2);
 });
 
 it("when an uncertain claim reopens with another code, retry retains its original invite", async () => {
@@ -567,7 +572,7 @@ it("when identity selection is pending and the invite changes, the late identity
     if (url.includes("/invites/BBBB")) return ok({ invite: previewFixture("BBBB") });
     return base(url, init);
   });
-  await click("Select identity to claim");
+  await click("Sign in to continue");
   await fillContact("guest");
   await act(async () => document.querySelector<HTMLInputElement>('[name="email"]')!.closest("form")!.requestSubmit());
   window.history.replaceState(null, "", "/?invite=BBBB");
@@ -575,7 +580,7 @@ it("when identity selection is pending and the invite changes, the late identity
   await settle();
   await act(async () => identity.resolve(ok({ session: { token: "old-token", expiresAt: "2027-01-01" }, user: guestUser, created: true })));
   await settle();
-  expect(document.querySelector(".invite-landing")?.textContent).toContain("Select identity to claim");
+  expect(document.querySelector(".invite-landing")?.textContent).toContain("Sign in to continue");
   expect(localStorage.getItem("velio.session.v1")).toBeNull();
 });
 
@@ -620,7 +625,7 @@ it("when a live frame is newer on an expired invitation, the activity facts upda
     if (url.endsWith("/activities")) return ok({ activities: [] });
     return ok({});
   }, { session: guestUser });
-  expect(document.body.textContent).toContain("This invitation has expired");
+  expect(document.body.textContent).toContain("this invitation has expired");
   const socket = ScriptedLiveSocket.instances.at(-1)!;
   await act(async () => socket.open());
   await act(async () =>
@@ -634,8 +639,30 @@ it("when a live frame is newer on an expired invitation, the activity facts upda
   );
   await settle();
   expect(document.body.textContent).toContain("1 booked · 1 remaining of 2");
-  expect(document.body.textContent).toContain("This invitation has expired");
+  expect(document.body.textContent).toContain("this invitation has expired");
   expect([...document.querySelectorAll("button")].some((button) => button.textContent === "Claim your spot")).toBe(false);
   expect(acks).toHaveLength(1);
   expect(acks[0]).toMatchObject({ appliedVersion: "6", source: "websocket" });
+});
+
+
+it("when an unknown invitation code is corrected, its recognized preview renders before one available opening is recorded", async () => {
+  const events: string[] = [];
+  const base = landingTransport({ events });
+  await mount(async (url, init) => {
+    if (url.endsWith("/invites/UNKNOWN1")) return ok({ error: { code: "invite_not_found", message: "Unknown" } }, 404);
+    return base(url, init);
+  }, { invite: "UNKNOWN1" });
+  expect(events).toHaveLength(0);
+  const input = document.querySelector<HTMLInputElement>('[name="inviteCode"]');
+  expect(input).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "8wkwe7dg82vr");
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("Open invitation");
+  await settle();
+  expect(window.location.search).toContain("invite=8WKWE7DG82VR");
+  expect(document.body.textContent).toContain("Meet at the gate, then walk together.");
+  expect(events.map(raw => JSON.parse(raw).outcome)).toEqual(["available"]);
 });
