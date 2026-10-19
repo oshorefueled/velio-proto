@@ -20,6 +20,15 @@ export function App(): ReactNode {
   const ready = status.status === "ready";
   const sessionToken = ready ? status.token : null;
   const bookingStore = useMemo(() => createBookingStore(api, store), [api, store]);
+  const [bookingRevision, setBookingRevision] = useState(0);
+  useEffect(() => {
+    let lastBookingId: string | undefined;
+    return bookingStore.subscribe(({ phase }) => {
+      if (phase.kind !== "confirmed" || phase.booking.id === lastBookingId) return;
+      lastBookingId = phase.booking.id;
+      setBookingRevision(value => value + 1);
+    });
+  }, [bookingStore]);
   const [page, setPage] = useState<Page>(() => {
     if (new URLSearchParams(location.search).has("activity") || !ready) return "explore";
     return status.user.email === "host@demo.velio.test" ? "hosting" : status.user.email === "booker@demo.velio.test" ? "bookings" : "explore";
@@ -116,7 +125,7 @@ export function App(): ReactNode {
       </div>
       {!inviteCode && page !== "publish" && <>
         <div className="column">
-          {page === "explore" ? <ActivityBrowser selectedId={selectedId} onSelect={selectActivity} />
+          {page === "explore" ? <ActivityBrowser selectedId={selectedId} onSelect={selectActivity} bookingRevision={bookingRevision} />
             : page === "hosting" ? <HostedActivities activities={hosted.activities} selectedId={selectedId} onSelect={selectActivity} reload={reloadHosted} loading={hosted.loading} error={hosted.error} />
               : ready ? <SavedBookings onSelect={selectActivity} /> : <p className="hint">Sign in to see your bookings.</p>}
         </div>

@@ -61,8 +61,7 @@ export interface SessionStore {
   /** Establish or resume the person for a contact; generation-guarded.
    * An optional inviteCode travels unchanged: the backend applies it as
    * acquisition only when this selection creates a new person. */
-  establish(input: { email: string; displayName?: string; inviteCode?: string }): Promise<void>;
-  cancelEstablishment(): void;
+  establish(input: { email: string; displayName?: string; inviteCode?: string }, signal?: AbortSignal): Promise<void>;
   /** Restore the remembered email after a 401 without replaying a mutation. */
   credentialLost(error?: string): void;
   /** Explicit identity switch: forget everything, back to selection. */
@@ -103,7 +102,8 @@ export function createSessionStore(
       return () => listeners.delete(listener);
     },
 
-    async establish(input) {
+    async establish(input, signal) {
+      if (signal?.aborted) return;
       const generation = ++establishGeneration;
       const lostFrom = state.status.status === "credential-lost" ? state.status.lostFrom : null;
       const restoring = state.status.status === "credential-lost" && state.status.restoring === true;
@@ -113,11 +113,11 @@ export function createSessionStore(
           visitId,
           visitorId: visitor.visitorId,
           channel: "web",
-        });
+        }, signal);
+        if (generation !== establishGeneration || signal?.aborted) return;
         if (restoring && lostFrom !== null && establishment.user.id !== lostFrom.id) {
           throw new Error("Could not restore your remembered account. Please sign in again.");
         }
-        if (generation !== establishGeneration) return; // a newer attempt owns the store
         storage.setItem(
           SESSION_KEY,
           JSON.stringify({ token: establishment.session.token, user: establishment.user }),
@@ -127,7 +127,7 @@ export function createSessionStore(
           visitorId: visitor.visitorId,
         });
       } catch (err) {
-        if (generation !== establishGeneration) return;
+        if (generation !== establishGeneration || signal?.aborted) return;
         const message =
           err instanceof ApiError
             ? err.message
@@ -141,10 +141,6 @@ export function createSessionStore(
           visitorId: visitor.visitorId,
         });
       }
-    },
-
-    cancelEstablishment() {
-      establishGeneration += 1;
     },
 
     credentialLost(error) {

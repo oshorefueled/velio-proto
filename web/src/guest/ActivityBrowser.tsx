@@ -15,9 +15,11 @@ import { useSession } from "../session.js";
 export function ActivityBrowser({
   selectedId,
   onSelect,
+  bookingRevision = 0,
 }: {
   selectedId: string | null;
   onSelect: (activityId: string) => void;
+  bookingRevision?: number;
 }): ReactNode {
   const { api } = useSession();
   const [activities, setActivities] = useState<PublicActivityView[] | null>(null);
@@ -42,7 +44,7 @@ export function ActivityBrowser({
     return () => {
       generation.current += 1;
     };
-  }, [api, retry]);
+  }, [api, retry, bookingRevision]);
 
   const loading = activities === null && error === null;
 

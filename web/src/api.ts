@@ -355,8 +355,8 @@ export class VelioApi {
     visitorId?: string;
     channel?: string;
     visitId?: string;
-  }): Promise<SessionEstablishment> {
-    return this.request("POST", "/demo/sessions", { body: input }) as never;
+  }, signal?: AbortSignal): Promise<SessionEstablishment> {
+    return this.request("POST", "/demo/sessions", { body: input, signal }) as never;
   }
 
   getMyBookings(token: string, signal?: AbortSignal): Promise<Array<{ id: string; activityId: string; planId: string; activity: { id: string; title: string; startsAt: string; timezone: string } }>> {

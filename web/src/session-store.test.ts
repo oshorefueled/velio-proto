@@ -161,3 +161,16 @@ it("when automatic recovery is unreachable, the remembered account survives relo
   expect(resumed.getState().status).toEqual({ status: "anonymous" });
   expect(storage.getItem("velio.session.v1")).toBeNull();
 });
+
+it("when an email entry is abandoned, its cancelled response cannot restore an account even if transport finishes late", async () => {
+  const storage = memoryStorage();
+  const fake = fakeTransport({ hangCalls: new Set([1]) });
+  const store = createSessionStore(new VelioApi(fake.transport), storage);
+  const controller = new AbortController();
+  const pending = store.establish({ email: "abandoned@example.test" }, controller.signal);
+  controller.abort();
+  fake.settle(1);
+  await pending;
+  expect(store.getState().status).toEqual({ status: "anonymous" });
+  expect(storage.getItem("velio.session.v1")).toBeNull();
+});

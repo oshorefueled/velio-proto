@@ -208,6 +208,7 @@ export function GuestActivity({
   const [refresh, setRefresh] = useState(0);
   const [validityPending, setValidityPending] = useState(false);
   const generation = useRef(0);
+  const observed = useRef<string | null>(null);
   const sessionToken = state.status.status === "ready" ? state.status.token : null;
   const isOwner = state.status.status === "ready" && (detail?.hostId ?? detail?.host?.id) === state.status.user.id;
 
@@ -300,6 +301,8 @@ export function GuestActivity({
 
   useEffect(() => {
     if (!visible || loading || loadError !== null || detail === null || detail.id !== activityId) return;
+    if (observed.current === observationId) return;
+    observed.current = observationId;
     emitActivityViewed(api, {
       eventId: observationId,
       activityId,

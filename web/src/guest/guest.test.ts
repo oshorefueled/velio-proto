@@ -162,6 +162,7 @@ async function fillContact(key: string) {
 
 it("when a booking request is in flight, submit stays disabled and a second click sends no second request", async () => {
   const postBodies: string[] = [];
+  let saved = false;
   const pending = deferred<{ status: number; json: unknown }>();
   await mount(async (url, init) => {
     if (url.endsWith("/bookings") && init.method === "POST") {
@@ -174,7 +175,7 @@ it("when a booking request is in flight, submit stays disabled and a second clic
     if (url.endsWith("/participants"))
       return ok({ error: { code: "forbidden", message: "Owning host only" } }, 403);
     if (url.includes("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
-    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    if (url.endsWith("/activities")) return ok({ activities: [{ ...listItem("a"), remainingSpots: saved ? 0 : 1 }] });
     return ok({});
   });
   await click("Book a spot");
@@ -195,10 +196,12 @@ it("when a booking request is in flight, submit stays disabled and a second clic
   expect(reserving!.disabled).toBe(true);
   await act(async () => reserving!.click());
   expect(postBodies).toHaveLength(1);
+  saved = true;
   await act(async () => pending.resolve(ok(bookingEnvelope(true), 201)));
   await settle();
   expect(document.body.textContent).toContain("Your spot is saved");
   expect(document.body.textContent).toContain("booking-booker");
+  expect(document.querySelector(".browse-item")!.textContent).toContain("full");
   const receipt = document.querySelector('[aria-label="Saved booking"]')!;
   expect(receipt.textContent).toContain("plan-a");
   expect(receipt.textContent).not.toContain("Source");
@@ -224,7 +227,7 @@ it("when a committed booking's response is lost, the saved-booking lookup shows 
     if (url.endsWith("/participants"))
       return ok({ error: { code: "forbidden", message: "Owning host only" } }, 403);
     if (url.includes("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
-    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    if (url.endsWith("/activities")) return ok({ activities: [{ ...listItem("a"), remainingSpots: posted ? 0 : 1 }] });
     return ok({});
   });
   expect(myBookingCalls).toBe(1); // boot check: nothing saved yet
@@ -233,6 +236,7 @@ it("when a committed booking's response is lost, the saved-booking lookup shows 
   await settle();
   expect(myBookingCalls).toBe(2); // unknown outcome reconciled before anything else
   expect(document.body.textContent).toContain("Your spot is saved");
+  expect(document.querySelector(".browse-item")!.textContent).toContain("full");
 });
 
 it("when the saved-booking check cannot run the outcome stays unknown; established absence enables only an explicit retry with the SAME operation id", async () => {
@@ -682,4 +686,84 @@ it.each([
   expect(document.body.textContent).not.toContain("Your spot is saved");
   expect([...document.querySelectorAll("button")].some(button => button.textContent === "Confirm one spot")).toBe(false);
   expect(refreshes).toBeGreaterThan(0);
+});
+
+it("when an account shortcut is selected during checkout, unmounting email entry cannot cancel the selected account", async () => {
+  let entry = deferred<Awaited<ReturnType<Transport>>>();
+  const emails: string[] = [];
+  let posts = 0;
+  await mount(async (url, init) => {
+    if (url.endsWith("/demo/sessions")) {
+      emails.push(JSON.parse(init.body!).email);
+      return entry.promise;
+    }
+    if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.endsWith("/bookings") && init.method === "POST") posts += 1;
+    if (url.endsWith("/my/activities")) return ok({ activities: [] });
+    if (url.endsWith("/my/bookings")) return ok({ bookings: [] });
+    if (url.endsWith("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  });
+  await click("Book a spot");
+  for (const account of ["Host", "Booker"]) {
+    const email = `${account.toLowerCase()}@demo.velio.test`;
+    await click(account);
+    await settle();
+    await act(async () => entry.resolve(ok({
+      session: { token: `${account}-token`, expiresAt: "2027-01-01" },
+      user: { ...user, id: account, email, displayName: `${account} account` },
+      created: false,
+    })));
+    await settle();
+    expect(document.querySelector(".account-name")?.textContent).toContain(`${account} account`);
+    expect(document.body.textContent).not.toContain("Opening account…");
+    expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain(email);
+    entry = deferred<Awaited<ReturnType<Transport>>>();
+  }
+  expect(emails).toEqual(["host@demo.velio.test", "booker@demo.velio.test"]);
+  expect(posts).toBe(0);
+});
+
+it("when availability refreshes while an activity stays open, viewing telemetry is sent once until the account changes", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const observations: Array<{ eventId: string; authorization?: string }> = [];
+  let snapshots = 0;
+  try {
+    await mount(async (url, init) => {
+      if (url.endsWith("/client-events")) {
+        const body = JSON.parse(init.body!);
+        if (body.type === "activity_viewed") observations.push({ eventId: body.eventId, authorization: init.headers.authorization });
+        return ok({ error: { code: "request_limit", message: "wait" } }, 429);
+      }
+      if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+      if (url.endsWith("/my/activities")) return ok({ activities: [] });
+      if (url.endsWith("/activities/a")) {
+        snapshots += 1;
+        return ok({ activity: detailOf("a"), invites: {} });
+      }
+      if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+      return ok({});
+    });
+    expect(observations).toHaveLength(1);
+    const socket = ScriptedLiveSocket.instances.at(-1)!;
+    await act(async () => socket.open());
+    await act(async () => socket.receive({ type: "subscribed", activityId: "a" }));
+    for (let i = 0; i < 3; i++) {
+      await act(async () => vi.advanceTimersByTime(5000));
+      await settle();
+    }
+    await act(async () => socket.receive({ type: "availability", activityId: "a", version: "7", remainingSpots: 0, eventId: null }));
+    await settle();
+    expect(snapshots).toBeGreaterThanOrEqual(4);
+    expect(document.body.textContent).toContain("0 remaining");
+    expect(observations).toHaveLength(1);
+    await click("Sign out");
+    await settle();
+    expect(observations).toHaveLength(2);
+    expect(observations[0]!.authorization).toBe("Bearer booker-token");
+    expect(observations[1]!.authorization).toBeUndefined();
+    expect(observations[1]!.eventId).not.toBe(observations[0]!.eventId);
+  } finally { vi.useRealTimers(); }
 });
