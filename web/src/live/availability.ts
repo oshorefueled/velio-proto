@@ -152,6 +152,9 @@ export function useLiveAvailability(options: LiveAvailabilityOptions): LiveAvail
   const pendingAckRef = useRef<AppliedAvailability | null>(null);
   const connectionRef = useRef<LiveConnectionState>("connecting");
   const connectionIdRef = useRef<string | null>(null);
+  // The last capability this viewer was issued; a replacement socket presents
+  // it so the server keeps one viewer across reconnects.
+  const previousConnectionIdRef = useRef<string | null>(null);
   const lifecycleReasonRef = useRef<AckReason>("reconnect");
   const seqRef = useRef(0);
   const generationRef = useRef(0);
@@ -236,6 +239,7 @@ export function useLiveAvailability(options: LiveAvailabilityOptions): LiveAvail
       appliedRef.current = null;
       pendingAckRef.current = null;
       connectionIdRef.current = null;
+      previousConnectionIdRef.current = null;
       setState({ ...initialOwnerState });
     };
 
@@ -323,6 +327,7 @@ export function useLiveAvailability(options: LiveAvailabilityOptions): LiveAvail
       const frame = message as Record<string, unknown>;
       if (frame.type === "measurement_registered" && typeof frame.connectionId === "string") {
         connectionIdRef.current = frame.connectionId;
+        previousConnectionIdRef.current = frame.connectionId;
         const pending = pendingAckRef.current;
         if (pending !== null && pending.connectionId === null) {
           const withCapability: AppliedAvailability = { ...pending, connectionId: frame.connectionId };
@@ -371,7 +376,14 @@ export function useLiveAvailability(options: LiveAvailabilityOptions): LiveAvail
         try {
           // Opt-in measurement first (idempotent per socket), then the
           // subscription whose acknowledgement opens the snapshot window.
-          socket.send(JSON.stringify({ type: "register_measurement", visible: document.visibilityState === "visible" }));
+          const previousConnectionId = previousConnectionIdRef.current;
+          socket.send(
+            JSON.stringify({
+              type: "register_measurement",
+              visible: document.visibilityState === "visible",
+              ...(previousConnectionId !== null ? { previousConnectionId } : {}),
+            }),
+          );
           socket.send(JSON.stringify({ type: "subscribe", activityId }));
         } catch {
           // A closing socket is recovered by its close handler.

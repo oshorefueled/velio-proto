@@ -767,3 +767,25 @@ it("when availability refreshes while an activity stays open, viewing telemetry 
     expect(observations[1]!.eventId).not.toBe(observations[0]!.eventId);
   } finally { vi.useRealTimers(); }
 });
+
+it("when the selected activity's live availability advances, its browse row shows the same newer count", async () => {
+  await mount(async (url) => {
+    if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.endsWith("/my/bookings")) return ok({ bookings: [] });
+    if (url.endsWith("/my/activities")) return ok({ activities: [] });
+    if (url.endsWith("/participants")) return ok({ error: { code: "forbidden", message: "Host only" } }, 403);
+    if (url.includes("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  });
+  await settle();
+  expect(document.querySelector(".browse-item")!.textContent).toContain("1 of 2 spots left");
+  const socket = ScriptedLiveSocket.instances.at(-1)!;
+  await act(async () => socket.open());
+  await act(async () => socket.receive({ type: "subscribed", activityId: "a" }));
+  await settle();
+  await act(async () => socket.receive({ type: "availability", activityId: "a", version: "2", remainingSpots: 0, eventId: null }));
+  await settle();
+  expect(document.body.textContent).toContain("2 booked · 0 remaining of 2");
+  expect(document.querySelector(".browse-item")!.textContent).toContain("full");
+});

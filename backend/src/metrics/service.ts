@@ -12,7 +12,8 @@ import { AckRejectedError, type ParsedAvailabilityAck } from "./domain.js";
  *
  * Closing: the first qualifying arrival wins. One acknowledgement for
  * (connection, activity, appliedVersion) closes every still-open measurement
- * of that connection and activity whose captured version is <= the applied
+ * of that viewer (the connection and any earlier connection it reconnected
+ * from, migration 0014) and activity whose captured version is <= the applied
  * version — a newer snapshot legitimately closes updates whose Pub/Sub
  * delivery was missed — and no later, older or duplicate ack can rewrite a
  * closed row (the UPDATE targets acked_at IS NULL; a database trigger makes
@@ -118,7 +119,10 @@ export async function recordAvailabilityAck(
            ack_applied_version = $5,
            closed_at = stamp.ts
        FROM stamp
-       WHERE m.connection_id = $1 AND m.activity_id = $2
+       WHERE m.connection_id IN (
+               SELECT lineage.connection_id FROM live_connections lineage
+               WHERE lineage.viewer_id = (SELECT viewer_id FROM live_connections WHERE connection_id = $1))
+         AND m.activity_id = $2
          AND m.acked_at IS NULL
          AND m.version::numeric <= $6::numeric
        RETURNING m.version,

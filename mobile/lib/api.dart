@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'live_availability.dart';
+
 /// Typed transport for the Velio backend (docs/client-contract.md). One place
 /// owns the base URL, error envelope and Retry-After plumbing so every caller
 /// speaks the machine-readable contract. The transport is injectable (tests
@@ -68,6 +70,22 @@ class InvitePreview {
   final InviteActivity activity;
   final InvitePlan plan;
   final InviteHost host;
+
+  /// Newer committed counts; a claimable invitation with no spots left reads
+  /// as full, so the explanation and controls never contradict the count.
+  InvitePreview withActivity(InviteActivity activity) => InvitePreview(
+    code: code,
+    rail: rail,
+    generation: generation,
+    state: state == 'claimable' && activity.remainingSpots <= 0
+        ? 'full'
+        : state,
+    expiresAt: expiresAt,
+    inviterDisplayName: inviterDisplayName,
+    activity: activity,
+    plan: plan,
+    host: host,
+  );
 
   factory InvitePreview.fromJson(Object? json) {
     final map = (json as Map).cast<String, dynamic>();
@@ -173,6 +191,24 @@ class InviteActivity {
   final int bookedCount;
   final int remainingSpots;
   final String availabilityVersion;
+
+  /// Committed availability from the live owner; booked count follows capacity.
+  InviteActivity withAvailability({
+    required String version,
+    required int remainingSpots,
+  }) => InviteActivity(
+    id: id,
+    title: title,
+    description: description,
+    startsAt: startsAt,
+    timezone: timezone,
+    priceMinorUnits: priceMinorUnits,
+    currency: currency,
+    capacity: capacity,
+    bookedCount: capacity - remainingSpots < 0 ? 0 : capacity - remainingSpots,
+    remainingSpots: remainingSpots,
+    availabilityVersion: version,
+  );
 
   factory InviteActivity.fromJson(Object? json) {
     final map = (json as Map).cast<String, dynamic>();
@@ -482,6 +518,22 @@ class VelioApi {
       body: {'operationId': operationId, 'inviteCode': ?inviteCode},
     );
     return BookingOperationResult.fromJson(json);
+  }
+
+  /// Rendered-availability measurement (SPEC C5): never affects the view.
+  Future<void> postAvailabilityAck(AvailabilityAck ack) async {
+    await _send(
+      'POST',
+      '/availability-acks',
+      body: {
+        'connectionId': ack.connectionId,
+        'activityId': ack.activityId,
+        'appliedVersion': ack.appliedVersion,
+        'appliedEventId': ?ack.appliedEventId,
+        'source': ack.source,
+        'reason': ack.reason,
+      },
+    );
   }
 
   /// Observability only (docs/client-contract.md §5): never vetoes identity

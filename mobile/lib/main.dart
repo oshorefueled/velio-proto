@@ -9,6 +9,7 @@ import 'api.dart';
 import 'invite_controller.dart';
 import 'invite_links.dart';
 import 'invite_screen.dart';
+import 'live_availability.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +27,7 @@ Future<void> main() async {
   final controller = InviteController(
     api: VelioApi(baseUrl: baseUrl),
     store: store,
+    liveConnector: ioLiveConnector(baseUrl),
   );
   await controller.bootstrap();
   await wireInviteLinks((link) => unawaited(controller.openLink(link)));

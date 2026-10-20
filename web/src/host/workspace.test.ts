@@ -389,3 +389,41 @@ it("when an account signs out with an unpublished activity, switching accounts r
   expect(document.querySelector<HTMLInputElement>("#pub-title")?.value).toBe("Keep my activity draft");
   expect(document.querySelector<HTMLTextAreaElement>("#pub-itinerary")?.value).toBe("Meet at the harbour.");
 });
+
+it("when a newer availability version arrives, the host's participant list refreshes with the new booker's masked email", async () => {
+  const booker = { userId: "booker", bookingId: "bk-1", displayName: "Private Booker", maskedEmail: "p***@example.test" };
+  const newcomer = { userId: "new", bookingId: "bk-2", displayName: "New Booker", maskedEmail: "n***@example.test" };
+  let participantCalls = 0;
+  await mount(async (url) => {
+    if (url.endsWith("/my/activities")) return { status: 200, json: { activities: [activity("a")] } };
+    if (url.endsWith("/participants")) {
+      participantCalls += 1;
+      const participants = participantCalls === 1 ? [booker] : [booker, newcomer];
+      return { status: 200, json: { activityId: "a", planId: "plan-a", confirmedCount: participants.length, participants } };
+    }
+    if (url.endsWith("/bookings/me")) return { status: 404, json: { error: { code: "booking_not_found", message: "none" } } };
+    if (url.endsWith("/activities")) return { status: 200, json: { activities: [] } };
+    if (url.endsWith("/client-events") || url.endsWith("/availability-acks")) return { status: 200, json: {} };
+    return { status: 200, json: { activity: activity("a"), invites: {} } };
+  });
+  await settle();
+  const list = () => document.querySelector('[aria-label="Booked participants"]')!.textContent;
+  expect(list()).toContain("Private Booker");
+  expect(list()).toContain("p***@example.test");
+
+  const socket = ScriptedLiveSocket.instances.at(-1)!;
+  await act(async () => socket.open());
+  await act(async () => socket.receive({ type: "subscribed", activityId: "a" }));
+  await settle();
+  // An older or equal version never refreshes private details.
+  await act(async () => socket.receive({ type: "availability", activityId: "a", version: "1", remainingSpots: 3, eventId: null }));
+  await settle();
+  expect(participantCalls).toBe(1);
+
+  await act(async () => socket.receive({ type: "availability", activityId: "a", version: "2", remainingSpots: 2, eventId: null }));
+  await settle();
+  expect(participantCalls).toBe(2);
+  expect(list()).toContain("Participants (2)");
+  expect(list()).toContain("New Booker");
+  expect(list()).toContain("n***@example.test");
+});

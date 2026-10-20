@@ -20,6 +20,6 @@ export function Participants({ activityId, version }: { activityId: string; vers
   return <section className="participants" aria-label="Booked participants">
     <h3>Participants{data ? ` (${data.confirmedCount})` : ""}</h3>
     {result.token === token && result.error && <div className="notice notice-warn" role="status">{result.error} <button type="button" className="button-ghost" onClick={() => setRetry(value => value + 1)}>Refresh participants</button></div>}
-    {data ? data.participants.length ? <ul>{data.participants.map(person => <li key={person.userId}>{person.displayName}</li>)}</ul> : <p className="hint">No confirmed bookings yet.</p> : !result.error && <p className="hint">Loading participants…</p>}
+    {data ? data.participants.length ? <ul>{data.participants.map(person => <li key={person.bookingId}>{person.displayName} <span className="hint">{person.maskedEmail}</span></li>)}</ul> : <p className="hint">No confirmed bookings yet.</p> : !result.error && <p className="hint">Loading participants…</p>}
   </section>;
 }

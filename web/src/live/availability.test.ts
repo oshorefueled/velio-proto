@@ -407,6 +407,14 @@ it("when the socket closes, the owner marks availability out of date, reconnects
   expect(harness.sockets).toHaveLength(2);
   harness.sockets[1].open();
   await settle();
+  // The same viewer re-registers with its earlier capability, so its missed
+  // update's measurement can close on the recovery acknowledgement.
+  expect(JSON.parse(harness.sockets[1].sent[0]!)).toEqual({
+    type: "register_measurement",
+    visible: true,
+    previousConnectionId: CONNECTION,
+  });
+  expect(JSON.parse(harness.sockets[0].sent[0]!)).not.toHaveProperty("previousConnectionId");
   // Socket open alone is not reconciliation: the indication stays until the
   // database snapshot applies.
   expect(harness.state().stale).toBe(true);

@@ -192,9 +192,12 @@ export function GuestActivity({
   visible,
   observationId,
   onOpenInvites,
+  onAvailability,
 }: {
   activityId: string;
   booking: BookingStore;
+  /** Newer applied availability, so other views of this activity can match it. */
+  onAvailability?: (availability: { activityId: string; version: string; remainingSpots: number }) => void;
   visible: boolean;
   /** Shared per selected activity — a sibling panel's emission is a duplicate. */
   observationId: string;
@@ -298,6 +301,11 @@ export function GuestActivity({
       };
     });
   }, [live.applied, activityId]);
+  useEffect(() => {
+    if (live.applied !== null) {
+      onAvailability?.({ activityId, version: live.applied.version, remainingSpots: live.applied.remainingSpots });
+    }
+  }, [live.applied, activityId, onAvailability]);
 
   useEffect(() => {
     if (!visible || loading || loadError !== null || detail === null || detail.id !== activityId) return;
