@@ -135,12 +135,12 @@ void main() {
     h.sockets.last.receive({'type': 'measurement_registered', 'connectionId': connectionId});
     h.sockets.last.receive({'type': 'subscribed', 'activityId': 'a1'});
     await tester.pump();
-    expect(find.text('1 booked · 1 remaining of 2'), findsOneWidget);
+    expect(find.text('1 of 2 spots left'), findsOneWidget);
 
     h.sockets.last.receive({'type': 'availability', 'activityId': 'a1', 'version': '6', 'remainingSpots': 0, 'eventId': null});
     expect(h.acks, isEmpty); // no frame has rendered the new version yet
     await tester.pump();
-    expect(find.text('2 booked · 0 remaining of 2'), findsOneWidget);
+    expect(find.text('0 of 2 spots left'), findsOneWidget);
     await tester.pump();
     expect(h.acks.map((ack) => ack['appliedVersion']), ['6']);
 

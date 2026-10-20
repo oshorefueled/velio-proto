@@ -200,6 +200,12 @@ class InviteController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void leaveCheckout() {
+    if (!_checkout || _claim is ClaimSubmitting) return;
+    _checkout = false;
+    notifyListeners();
+  }
+
   /// App lifecycle: only a foregrounded preview refreshes periodically.
   void setForeground(bool foreground) {
     _foreground = foreground;

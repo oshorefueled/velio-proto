@@ -44,8 +44,36 @@ class VelioApp extends StatelessWidget {
     return MaterialApp(
       title: 'Velio',
       theme: ThemeData(
-        colorSchemeSeed: const Color(0xFFE8641B),
         useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: green,
+          primary: green,
+          surface: Colors.white,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF9FAF9),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: lime,
+            foregroundColor: limeInk,
+            minimumSize: const Size.fromHeight(50),
+            shape: const StadiumBorder(),
+            textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: ink,
+            minimumSize: const Size.fromHeight(48),
+            shape: const StadiumBorder(),
+            side: const BorderSide(color: Color(0xFFD0D5DD)),
+            textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
       ),
       home: InviteScreen(controller: controller),
     );

@@ -249,7 +249,7 @@ void main() {
     await tester.tap(find.byKey(const Key('continue-checkout')));
     await tester.pump();
     expect(find.textContaining('A connection is required'), findsOneWidget);
-    expect(find.text('Review your booking'), findsNothing);
+    expect(find.text('Confirm your spot'), findsNothing);
   });
 
   test('recovered capacity renders at once through the live owner and is acknowledged as a reconnect snapshot', () async {
