@@ -75,7 +75,7 @@ export function HostedActivities({
                     {activity.started
                       ? "activity started"
                       : activity.capacity - activity.confirmedCount > 0
-                        ? <span className="spots-free">{activity.capacity - activity.confirmedCount} spots left</span>
+                        ? <span className="spots-free">{activity.capacity - activity.confirmedCount} {activity.capacity - activity.confirmedCount === 1 ? "spot" : "spots"} left</span>
                         : <span className="spots-none">no spots left</span>}
                   </span>
                   <span className="card-spots-sub">of {activity.capacity}</span>

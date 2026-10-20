@@ -529,8 +529,6 @@ it("when the owning host opens their detail, the host entry leads to the same in
     },
     { session: hostUser, view: "activity" },
   );
-  // The host detail lives in the hidden-by-default host tools; switch first.
-  await click("My activities");
   await settle(4);
   await click("Invite someone to this plan");
   await settle();

@@ -630,10 +630,6 @@ it("when a guest confirms then signs out, signing in with the same email reopens
   await settle();
   await click("My bookings");
   await settle();
-  // A selection stays up across page navigation (one live owner); the list
-  // returns through the detail's back link.
-  await click("Back to My bookings");
-  await settle();
   const savedActivity = [...document.querySelectorAll<HTMLButtonElement>(".browse-item")].find(button => button.textContent?.includes("Activity a"))!;
   await act(async () => savedActivity.click());
   await settle();
@@ -806,4 +802,91 @@ it("when the selected activity's live availability advances, its browse row show
   await click("Back to Explore");
   await settle();
   expect(document.querySelector(".activity-card")!.textContent).toContain("No spots left");
+});
+
+it("when the activity fills during checkout, the booking control shows Full and sends no booking request", async () => {
+  ScriptedLiveSocket.instances.length = 0;
+  let posts = 0;
+  await mount(async (url, init) => {
+    if (url.endsWith("/bookings") && init.method === "POST") { posts += 1; return ok(bookingEnvelope(true), 201); }
+    if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.endsWith("/my/activities")) return ok({ activities: [] });
+    if (url.endsWith("/participants")) return ok({ error: { code: "forbidden", message: "Owning host only" } }, 403);
+    if (url.includes("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  });
+  await click("Book a spot");
+  const socket = ScriptedLiveSocket.instances.at(-1)!;
+  await act(async () => socket.open());
+  await act(async () => socket.receive({ type: "subscribed", activityId: "a" }));
+  await settle();
+  await act(async () => socket.receive({ type: "availability", activityId: "a", version: "7", remainingSpots: 0, eventId: null }));
+  await settle();
+  const buttons = [...document.querySelectorAll("button")];
+  expect(buttons.find(b => b.textContent === "Confirm one spot")).toBeUndefined();
+  expect(buttons.find(b => b.textContent === "Full")?.disabled).toBe(true);
+  expect(posts).toBe(0);
+});
+
+it("when a booking is confirmed from checkout, Back to activity returns to the full activity page", async () => {
+  await mount(async (url, init) => {
+    if (url.endsWith("/bookings") && init.method === "POST") return ok(bookingEnvelope(true), 201);
+    if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.endsWith("/my/activities")) return ok({ activities: [] });
+    if (url.endsWith("/participants")) return ok({ error: { code: "forbidden", message: "Owning host only" } }, 403);
+    if (url.includes("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  });
+  await click("Book a spot");
+  await click("Confirm one spot");
+  await settle();
+  expect(document.body.textContent).toContain("Your spot is saved");
+  expect(document.body.textContent).not.toContain("About this activity");
+  await click("Back to activity");
+  await settle();
+  expect(document.querySelector('[aria-label="Checkout"]')).toBeNull();
+  expect(document.body.textContent).toContain("About this activity");
+  expect(document.querySelector('[aria-label="Saved booking"]')!.textContent).toContain("booking-booker");
+});
+
+it("when an invitation link is opened and left, the unpublished draft is kept", async () => {
+  await mount(async (url) => {
+    if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.endsWith("/my/activities")) return ok({ activities: [] });
+    if (url.endsWith("/my/bookings")) return ok({ bookings: [] });
+    if (url.includes("/invites/")) return ok({ error: { code: "invite_not_found", message: "Not found" } }, 404);
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  }, { activity: "" });
+  await click("Publish activity");
+  await act(async () => {
+    const input = document.querySelector<HTMLInputElement>("#pub-title")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "My draft");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  history.pushState(null, "", "/?invite=ABC123");
+  await act(async () => { window.dispatchEvent(new PopStateEvent("popstate")); });
+  await settle();
+  expect(document.querySelector(".invite-landing")).not.toBeNull();
+  history.pushState(null, "", "/");
+  await act(async () => { window.dispatchEvent(new PopStateEvent("popstate")); });
+  await settle();
+  await click("Publish activity");
+  expect(document.querySelector<HTMLInputElement>("#pub-title")!.value).toBe("My draft");
+});
+
+it("when a card opens the activity page, focus lands on its heading", async () => {
+  await mount(async (url) => {
+    if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.endsWith("/my/activities")) return ok({ activities: [] });
+    if (url.endsWith("/participants")) return ok({ error: { code: "forbidden", message: "Owning host only" } }, 403);
+    if (url.includes("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  }, { activity: "" });
+  await act(async () => document.querySelector<HTMLButtonElement>(".activity-card")!.click());
+  await settle();
+  expect(document.activeElement?.id).toBe("guest-detail-heading");
 });

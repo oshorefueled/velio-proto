@@ -70,8 +70,8 @@ export function App(): ReactNode {
     syncUrl(id, "activity", null);
   }, [syncUrl]);
   function navigate(next: Page) {
-    setPage(next); setView("activity"); setInviteCode(null);
-    syncUrl(selectedId, "activity", null);
+    setPage(next); setSelectedId(null); setView("activity"); setInviteCode(null);
+    syncUrl(null, "activity", null);
   }
   function chooseAccount(account: DemoAccount) {
     setPage(account === "Host" ? "hosting" : account === "Booker" ? "bookings" : "explore");
@@ -108,8 +108,8 @@ export function App(): ReactNode {
   }, []);
 
   // The redesigned screens are full pages: the selected activity is the
-  // detail page, reached from any list, kept across page navigation (one
-  // live owner per selected activity), and left via its back link.
+  // detail page, reached from any list and left via its back link or the
+  // main navigation, which always opens that page's list.
   const showDetail = selectedId !== null && view === "activity" && page !== "publish";
   const backLabel = page === "hosting" ? "Back to My activities" : page === "bookings" ? "Back to My bookings" : "Back to Explore";
 
@@ -118,10 +118,10 @@ export function App(): ReactNode {
       <div className="app-nav-inner">
         <span className="brand">Velio</span>
         <nav className="nav-links" aria-label="Main navigation">
-          <button type="button" aria-current={page === "explore" && !showDetail ? "page" : undefined} onClick={() => navigate("explore")}>Explore</button>
+          <button type="button" aria-current={page === "explore" ? "page" : undefined} onClick={() => navigate("explore")}>Explore</button>
           {ready && <>
-            <button type="button" aria-current={page === "bookings" && !showDetail ? "page" : undefined} onClick={() => navigate("bookings")}>My bookings</button>
-            <button type="button" aria-current={page === "hosting" && !showDetail ? "page" : undefined} onClick={() => navigate("hosting")}>My activities</button>
+            <button type="button" aria-current={page === "bookings" ? "page" : undefined} onClick={() => navigate("bookings")}>My bookings</button>
+            <button type="button" aria-current={page === "hosting" ? "page" : undefined} onClick={() => navigate("hosting")}>My activities</button>
           </>}
         </nav>
         <div className="nav-side">
@@ -137,12 +137,12 @@ export function App(): ReactNode {
     {status.status === "credential-lost" && status.restoring && <div className="page"><p className="notice" role="status">Restoring access for {status.lostFrom?.email}… Your checkout and drafts are kept.</p></div>}
     <main>
       {inviteCode && <div className="page"><InviteLanding key={inviteCode} code={inviteCode} onCodeChange={code => { setInviteCode(code); syncUrl(selectedId, view, code); }} visible booking={bookingStore} onRequestIdentity={() => setIdentityPrompt(true)} onBrowse={() => { selectActivity(null); setPage("explore"); }} /></div>}
+      {/* The publish draft stays mounted (hidden) so switching accounts,
+          pages or opening an invitation retains every entered value. */}
+      <div className="page page-narrow" hidden={page !== "publish" || !!inviteCode}>
+        <PublishForm onPublished={activity => { selectActivity(activity.id); setPage("hosting"); reloadHosted(); }} />
+      </div>
       {!inviteCode && <>
-        {/* The publish draft stays mounted (hidden) so switching accounts or
-            pages retains every entered value. */}
-        <div className="page page-narrow" hidden={page !== "publish"}>
-          <PublishForm onPublished={activity => { selectActivity(activity.id); setPage("hosting"); reloadHosted(); }} />
-        </div>
         {page !== "publish" && (view === "invites" && selectedId
           ? <div className="page"><InvitePanel key={selectedId} activityId={selectedId} onBack={backToActivity} onRequestIdentity={() => setIdentityPrompt(true)} /></div>
           : showDetail && selectedId

@@ -492,19 +492,6 @@ it("when a used vouch is displayed, its useful facts remain and a used opening i
   expect(events.map(raw => JSON.parse(raw).outcome)).toEqual(["used"]);
 });
 
-it("when a stored activity differs from the invite, only the invite booking lookup runs", async () => {
-  localStorage.setItem("velio.selected.v1", "old-activity");
-  const lookups: string[] = [];
-  const base = landingTransport();
-  await mount(async (url, init) => {
-    if (url.endsWith("/bookings/me")) lookups.push(url);
-    if (url.includes("/activities/old-activity")) return ok({ error: { code: "activity_not_found", message: "old" } }, 404);
-    return base(url, init);
-  }, { session: guestUser });
-  expect(lookups.some((url) => url.includes("old-activity"))).toBe(false);
-  expect(document.querySelector(".invite-landing")?.textContent).toContain("Claim your spot");
-});
-
 it("when the displayed invitation account changes, a new activity observation uses a distinct event ID", async () => {
   const views: unknown[] = [];
   const base = landingTransport();

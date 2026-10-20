@@ -99,9 +99,6 @@ async function mount(transport: Transport) {
       }),
     ),
   );
-  // These are host-workspace checks: the app opens in booking tools (public
-  // browse first), so switch to the host surface under test.
-  await click("My activities");
   await settle();
 }
 async function click(text: string) {
@@ -242,16 +239,25 @@ it.each([200, 401])(
     expect(document.body.textContent).not.toContain("Your session expired");
   },
 );
-it("when navigating between activity lists, the same detail has one live owner and one display observation", async () => {
+const visibleHeading = () => [...document.querySelectorAll("h1")].find(h => !h.closest("[hidden]"))?.textContent;
+it("when navigating from a detail to the activity lists, each list opens and the detail leaves no extra live owner or observation", async () => {
   ScriptedLiveSocket.instances.length = 0;
   const eventIds: string[] = [];
   await mount(transportWith(async url => {
     if (url.endsWith("/client-events")) { eventIds.push("observed"); return { status: 200, json: {} }; }
     return { status: 200, json: { activity: activity("a"), invites: {} } };
   }));
-  await click("Explore");
-  await click("My activities");
   expect(document.querySelectorAll("#guest-detail-heading")).toHaveLength(1);
+  await click("Explore");
+  await settle();
+  expect(visibleHeading()).toBe("Explore activities");
+  expect(document.querySelector('nav [aria-current="page"]')?.textContent).toBe("Explore");
+  await click("My activities");
+  await settle();
+  expect(visibleHeading()).toBe("My activities");
+  expect(document.querySelector('nav [aria-current="page"]')?.textContent).toBe("My activities");
+  expect(document.querySelectorAll("#guest-detail-heading")).toHaveLength(0);
+  expect(window.location.search).not.toContain("activity=");
   expect(ScriptedLiveSocket.instances).toHaveLength(1);
   expect(eventIds).toHaveLength(1);
 });

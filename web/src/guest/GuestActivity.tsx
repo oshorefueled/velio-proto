@@ -34,7 +34,6 @@ function BookingControls({
   onCheckAgain,
   reviewing,
   onReview,
-  onBackToActivity,
 }: {
   booking: BookingState;
   detail: ActivityDetailView;
@@ -43,7 +42,6 @@ function BookingControls({
   onCheckAgain: () => void;
   reviewing: boolean;
   onReview: () => void;
-  onBackToActivity: () => void;
 }): ReactNode {
   const { state } = useSession();
   const phase = booking.phase;
@@ -156,19 +154,6 @@ function BookingControls({
   }
 
   // idle
-  if (reviewing) {
-    return (
-      <div className="booking-panel">
-        <button type="button" className="button-ghost" onClick={onBackToActivity}>Back to activity</button>
-        {ready ? (
-          <button type="button" className="button-primary book-cta" onClick={onBook}>Confirm one spot</button>
-        ) : state.status.status === "credential-lost" ? null : (
-          <IdentityPanel contextNote="Your checkout is kept." />
-        )}
-        <p className="hint">Your spot is confirmed once your booking is saved.</p>
-      </div>
-    );
-  }
   if (detail.started) {
     return (
       <div className="booking-panel">
@@ -189,11 +174,23 @@ function BookingControls({
       </div>
     );
   }
+  if (!reviewing) {
+    return (
+      <div className="booking-panel">
+        <button type="button" className="button-primary book-cta" onClick={onReview}>
+          Book a spot<ArrowRightIcon />
+        </button>
+      </div>
+    );
+  }
+  if (!ready) {
+    if (state.status.status === "credential-lost") return null;
+    return <IdentityPanel contextNote="Your checkout is kept." />;
+  }
   return (
     <div className="booking-panel">
-      <button type="button" className="button-primary book-cta" onClick={onReview}>
-        Book a spot<ArrowRightIcon />
-      </button>
+      <button type="button" className="button-primary book-cta" onClick={onBook}>Confirm one spot</button>
+      <p className="hint">Your spot is confirmed once your booking is saved.</p>
     </div>
   );
 }
@@ -340,9 +337,19 @@ export function GuestActivity({
     });
   }, [api, activityId, detail, loading, loadError, state.visitorId, sessionToken, visible, observationId]);
 
+  // Opening the page unmounts the card or row that had focus; land focus on
+  // the heading instead of leaving it on the document body.
+  const heading = useRef<HTMLHeadingElement>(null);
+  const detailId = detail?.id;
+  useEffect(() => {
+    if (detailId !== activityId) return;
+    if (document.activeElement === null || document.activeElement === document.body) heading.current?.focus();
+  }, [detailId, activityId]);
+
   if (loading) {
     return (
       <section className="page" aria-busy="true" aria-label="Activity">
+        {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
         <p className="hint">Opening the activity…</p>
         <p className="hint">Availability is unknown until it loads — it is not zero.</p>
       </section>
@@ -370,9 +377,10 @@ export function GuestActivity({
       aria-label={reviewing ? "Checkout" : "Activity"}
     >
       {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
+      {reviewing && <button type="button" className="button-ghost" onClick={() => setReviewing(false)}>Back to activity</button>}
       <div className="detail-layout">
         <div className="detail-main">
-          <h1 className="detail-title" id="guest-detail-heading">{detail.title}</h1>
+          <h1 className="detail-title" id="guest-detail-heading" ref={heading} tabIndex={-1}>{detail.title}</h1>
           <p className="detail-sub">{detail.description}</p>
           <div className="detail-facts">
             <span className="hosted-by"><span className="avatar">{initials(detail.hostDisplayName)}</span> Hosted by {hostFirstName(detail.hostDisplayName)}</span>
@@ -467,7 +475,6 @@ export function GuestActivity({
                 }}
                 reviewing={reviewing}
                 onReview={() => setReviewing(true)}
-                onBackToActivity={() => setReviewing(false)}
               />
             )}
             <p className="aside-note">No payment will be collected in this demo.</p>

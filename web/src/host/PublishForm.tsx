@@ -9,8 +9,8 @@ import { InfoIcon } from "../icons.js";
  * Host publication form (issue #14), revamped to the two numbered sections
  * of the mockup. All input is retained on validation or network failure;
  * server field errors land next to their inputs; submission is disabled
- * while pending. The 500-character counters are a client-side guideline the
- * mockup prescribes. A successful publication selects the new activity —
+ * while pending. The character counters inform without capping: the API
+ * sets no length limit. A successful publication selects the new activity —
  * the actual response's activity id, never a guessed one.
  */
 
@@ -24,7 +24,6 @@ const CURRENCY_NAMES: Record<(typeof CURRENCIES)[number], string> = {
   JPY: "Japanese Yen",
   KWD: "Kuwaiti Dinar",
 };
-const CONTENT_MAX_LENGTH = 500;
 const TIME_ZONES = [
   "Africa/Lagos",
   "Europe/Stockholm",
@@ -129,7 +128,7 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
         <span aria-hidden="true">/</span>
         <span className="crumb-current">New activity</span>
       </div>
-      <h2 id="publish-heading" className="detail-title">Publish an activity</h2>
+      <h1 id="publish-heading" className="detail-title">Publish an activity</h1>
       <p className="page-sub">Create a plan people can discover and book.</p>
       <form onSubmit={(event) => void submit(event)} noValidate>
         <div className="form-section">
@@ -154,14 +153,14 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
 
           <label htmlFor="pub-description">Description</label>
           <div className="field-with-count">
-            <textarea id="pub-description" maxLength={CONTENT_MAX_LENGTH} value={description} onChange={event => setDescription(event.target.value)} aria-invalid={!!fieldErrors.description} aria-describedby="pub-description-error" />
-            <span className="field-count">{description.length}/{CONTENT_MAX_LENGTH}</span>
+            <textarea id="pub-description" value={description} onChange={event => setDescription(event.target.value)} aria-invalid={!!fieldErrors.description} aria-describedby="pub-description-error" />
+            <span className="field-count">{description.length} characters</span>
           </div>
           {fieldErrors.description && <p id="pub-description-error" className="field-error" role="alert">{fieldErrors.description}</p>}
           <label htmlFor="pub-itinerary">Itinerary</label>
           <div className="field-with-count">
-            <textarea id="pub-itinerary" maxLength={CONTENT_MAX_LENGTH} value={itinerary} onChange={event => setItinerary(event.target.value)} aria-invalid={!!fieldErrors.itinerary} aria-describedby="pub-itinerary-error" />
-            <span className="field-count">{itinerary.length}/{CONTENT_MAX_LENGTH}</span>
+            <textarea id="pub-itinerary" value={itinerary} onChange={event => setItinerary(event.target.value)} aria-invalid={!!fieldErrors.itinerary} aria-describedby="pub-itinerary-error" />
+            <span className="field-count">{itinerary.length} characters</span>
           </div>
           {fieldErrors.itinerary && <p id="pub-itinerary-error" className="field-error" role="alert">{fieldErrors.itinerary}</p>}
         </div>

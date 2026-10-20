@@ -9,11 +9,11 @@
 
 export function localWallToUtcInstant(wall: string, timeZone: string): Date {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(wall)) {
-    throw new Error("Use the date-time picker value (YYYY-MM-DDTHH:mm)");
+    throw new Error("Choose a date and a start time.");
   }
   let candidate = Date.parse(`${wall}:00Z`);
   if (Number.isNaN(candidate)) {
-    throw new Error("Use the date-time picker value (YYYY-MM-DDTHH:mm)");
+    throw new Error("Choose a date and a start time.");
   }
   for (let pass = 0; pass < 3; pass += 1) {
     const offsetMinutes = zoneOffsetMinutes(new Date(candidate), timeZone);
