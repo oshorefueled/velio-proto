@@ -60,6 +60,7 @@ class InvitePreview {
     required this.activity,
     required this.plan,
     required this.host,
+    this.source,
   });
   final String code;
   final String rail;
@@ -70,6 +71,22 @@ class InvitePreview {
   final InviteActivity activity;
   final InvitePlan plan;
   final InviteHost host;
+
+  /// The decoded response this preview came from; the offline cache keeps it.
+  final Map<String, dynamic>? source;
+
+  InvitePreview withState(String state) => InvitePreview(
+    code: code,
+    rail: rail,
+    generation: generation,
+    state: state,
+    expiresAt: expiresAt,
+    inviterDisplayName: inviterDisplayName,
+    activity: activity,
+    plan: plan,
+    host: host,
+    source: source,
+  );
 
   /// Newer committed counts; a claimable invitation with no spots left reads
   /// as full, so the explanation and controls never contradict the count.
@@ -85,6 +102,7 @@ class InvitePreview {
     activity: activity,
     plan: plan,
     host: host,
+    source: source,
   );
 
   factory InvitePreview.fromJson(Object? json) {
@@ -100,6 +118,7 @@ class InvitePreview {
       activity: InviteActivity.fromJson(invite['activity']),
       plan: InvitePlan.fromJson(invite['plan']),
       host: InviteHost.fromJson(invite['host']),
+      source: map,
     );
   }
 }

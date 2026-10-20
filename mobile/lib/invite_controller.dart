@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -59,8 +60,32 @@ class InviteController extends ChangeNotifier {
 
   bool get checkout => _checkout;
 
-  /// Displayed availability may be out of date (known live loss/failed refresh).
-  bool get availabilityStale => _live?.stale ?? false;
+  /// Displayed availability may be out of date (cached offline facts, known
+  /// live loss or a failed refresh).
+  bool get availabilityStale => _cachedAt != null || (_live?.stale ?? false);
+
+  /// When the displayed preview was fetched, if it is cached offline facts.
+  DateTime? get cachedAt => _cachedAt;
+  DateTime? _cachedAt;
+
+  /// Connection-required feedback for a claim attempted from cached facts.
+  String? get offlineNotice => _offlineNotice;
+  String? _offlineNotice;
+  int? _refreshingGeneration;
+  LiveConnection? _liveConnection;
+
+  bool get refreshing => _refreshingGeneration == _codeGeneration;
+
+  /// Only a transport failure means "offline"; an API answer or an
+  /// unreadable response is a different problem and never shows cached facts.
+  static bool _isTransportFailure(Object error) =>
+      error is SocketException ||
+      error is TimeoutException ||
+      error is HttpException ||
+      error is TlsException;
+
+  static const _connectionRequired =
+      'A connection is required to claim a spot. Nothing was reserved — try again when you are online.';
   List<SavedBookingSummary> get savedBookings =>
       List.unmodifiable(_savedBookings);
   ActivityDetails? get savedDetails => _savedDetails;
@@ -150,6 +175,11 @@ class InviteController extends ChangeNotifier {
   /// Checkout is a deliberate observation, independent of account entry.
   void continueToCheckout() {
     final preview = _preview;
+    if (_cachedAt != null) {
+      _offlineNotice = _connectionRequired;
+      notifyListeners();
+      return;
+    }
     if (preview == null || _checkout || preview.state != 'claimable') return;
     _checkout = true;
     final visitor = visitorId;
@@ -174,6 +204,81 @@ class InviteController extends ChangeNotifier {
   void setForeground(bool foreground) {
     _foreground = foreground;
     _live?.setForeground(foreground);
+    if (foreground && _cachedAt != null) {
+      unawaited(refreshPreview(reason: 'foreground'));
+    }
+  }
+
+  /// Re-resolve the displayed invitation (connectivity return, foreground or
+  /// an explicit retry): fresh validity, capacity and any saved booking are
+  /// resolved before a new confirmation can start. A result for a replaced
+  /// code is discarded; the booking check keeps its own account guard.
+  Future<void> refreshPreview({String reason = 'reconnect'}) async {
+    final code = _code;
+    final generation = _codeGeneration;
+    final current = _preview;
+    if (code == null || current == null || _refreshingGeneration == generation) return;
+    _refreshingGeneration = generation;
+    notifyListeners();
+    try {
+      final fresh = await api.resolveInvite(code);
+      if (generation != _codeGeneration) return;
+      _cache(fresh);
+      _cachedAt = null;
+      _offlineNotice = null;
+      _resolveError = null;
+      final live = _live;
+      // Merge with what is displayed now: the live owner may have applied
+      // newer counts while this resolve was in flight.
+      final displayed = _preview ?? current;
+      if (live != null && displayed.activity.id == fresh.activity.id) {
+        // Fresh capacity is a recovery snapshot: the owner applies it now
+        // (newer versions only) and acknowledges it once rendered.
+        _preview = fresh.withActivity(displayed.activity);
+        live.adoptSnapshot(
+          LiveFacts(
+            version: fresh.activity.availabilityVersion,
+            remainingSpots: fresh.activity.remainingSpots,
+          ),
+          reason: reason,
+        );
+      } else {
+        _preview = fresh;
+      }
+      notifyListeners();
+      await _quietBookingCheck();
+    } catch (error) {
+      if (generation != _codeGeneration) return;
+      if (_isTransportFailure(error)) {
+        _offlineNotice = 'Still offline — showing the details saved earlier.';
+      } else {
+        // The server answered, so this device is online again.
+        _cachedAt = null;
+        _offlineNotice = null;
+        _resolveError = error is ApiError && error.status == 404
+            ? 'This invitation code is not recognized.'
+            : error is ApiError
+            ? error.message
+            : 'Could not refresh this invitation.';
+      }
+      notifyListeners();
+    } finally {
+      if (_refreshingGeneration == generation) {
+        _refreshingGeneration = null;
+        notifyListeners();
+      }
+    }
+  }
+
+  void _cache(InvitePreview preview) {
+    final device = _device;
+    final source = preview.source;
+    if (device == null || source == null) return;
+    device.cachePreview(
+      preview.code,
+      CachedPreview(json: source, fetchedAt: DateTime.now().toUtc().toIso8601String()),
+    );
+    unawaited(store.save());
   }
 
   /// Called post-frame by the UI once the preview's availability rendered.
@@ -219,6 +324,15 @@ class InviteController extends ChangeNotifier {
     );
     live.addListener(() {
       if (_live != live) return;
+      // Connectivity returned for cached offline facts: resolve them afresh
+      // once per transition to live.
+      final connection = live.connection;
+      if (connection != _liveConnection) {
+        _liveConnection = connection;
+        if (_cachedAt != null && connection == LiveConnection.live) {
+          unawaited(refreshPreview());
+        }
+      }
       final applied = live.applied;
       final current = _preview;
       if (applied != null &&
@@ -268,6 +382,9 @@ class InviteController extends ChangeNotifier {
     _claimRun += 1;
     _live?.dispose();
     _live = null;
+    _liveConnection = null;
+    _cachedAt = null;
+    _offlineNotice = null;
     _checkout = false;
     _retryEligible = false;
     _preview = null;
@@ -292,16 +409,35 @@ class InviteController extends ChangeNotifier {
       if (generation != _codeGeneration) return;
       _preview = preview;
       _resolving = false;
+      _cache(preview);
       _bindLive(preview, generation);
       notifyListeners();
       await _quietBookingCheck();
     } catch (error) {
       if (generation != _codeGeneration) return;
       _resolving = false;
+      final cached = _isTransportFailure(error) ? device.previews[code] : null;
+      if (cached != null) {
+        // Offline reopen: readable facts with their fetch time; availability
+        // is out of date and claiming waits for a fresh resolve. A deadline
+        // that passed since then reads as expired.
+        final restored = InvitePreview.fromJson(cached.json);
+        _preview =
+            restored.state == 'claimable' &&
+                DateTime.parse(restored.expiresAt).isBefore(DateTime.now())
+            ? restored.withState('expired')
+            : restored;
+        _cachedAt = DateTime.parse(cached.fetchedAt);
+        _bindLive(_preview!, generation);
+        notifyListeners();
+        return;
+      }
       _resolveError = error is ApiError && error.status == 404
           ? 'This invitation code is not recognized.'
           : error is ApiError
           ? error.message
+          : _isTransportFailure(error)
+          ? 'You appear to be offline, and this invitation has not been loaded on this device yet. Your code is kept — tap Retry when you are connected.'
           : 'Could not open this invitation.';
       notifyListeners();
     }
@@ -312,7 +448,9 @@ class InviteController extends ChangeNotifier {
   /// opening states only, one stable invite_opened. Telemetry never blocks.
   void notePreviewDisplayed() {
     final preview = _preview;
-    if (preview == null || _observationEmitted) return;
+    // Cached offline facts are not a recognized landing; the opening is
+    // observed once fresh facts are displayed.
+    if (preview == null || _observationEmitted || _cachedAt != null) return;
     _observationEmitted = true;
     final visitor = visitorId;
     if (visitor == null) return;
@@ -516,6 +654,11 @@ class InviteController extends ChangeNotifier {
   /// the code bound at operation start stays bound across retries, and a
   /// pending request can never be mistaken for a confirmation.
   Future<void> claim() async {
+    if (_cachedAt != null) {
+      _offlineNotice = _connectionRequired;
+      notifyListeners();
+      return;
+    }
     final preview = _preview;
     final session = _session;
     if (preview == null ||

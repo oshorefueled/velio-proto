@@ -191,6 +191,22 @@ class LiveAvailability extends ChangeNotifier {
     }
   }
 
+  /// A database read made outside this owner (e.g. reconnect recovery of
+  /// cached facts) is applied like the owner's own snapshot: only if newer.
+  void adoptSnapshot(LiveFacts facts, {required String reason}) {
+    if (_disposed || compareVersions(facts.version, _version) <= 0) return;
+    _apply(
+      LiveApplication(
+        version: facts.version,
+        remainingSpots: facts.remainingSpots,
+        source: 'snapshot',
+        reason: reason,
+        eventId: null,
+        seq: ++_seq,
+      ),
+    );
+  }
+
   /// The UI rendered [displayedVersion]: acknowledge the newest pending
   /// application only when that is exactly its version.
   void markRendered(String displayedVersion) {
