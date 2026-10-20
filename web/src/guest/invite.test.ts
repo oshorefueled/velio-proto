@@ -156,12 +156,14 @@ function inviteTransport(over: {
   hosted?: Array<{ id: string }>;
   myBooking?: { status: number; json: unknown };
   events?: string[];
+  savedPublic?: ReturnType<typeof inviteOf>;
 }) {
   return async (url: string, init: { method: string; body?: string }) => {
     if (url.endsWith("/client-events")) {
       over.events?.push(init.body ?? "");
       return ok({});
     }
+    if (url.endsWith("/invites/public")) return ok({ invite: over.savedPublic ?? null });
     if (url.endsWith("/invites") && init.method === "POST") {
       if (over.create) return over.create(url, init);
       const input = JSON.parse(init.body ?? "{}");
@@ -205,6 +207,19 @@ it("when a confirmed booker opens the activity, the invite card follows the book
   expect(card.querySelector("hr.invite-divider")).not.toBeNull();
   expect([...card.querySelectorAll("button")].map((button) => button.textContent)).toEqual(["Invite", "Or generate a public invite"]);
   expect(document.body.textContent).not.toContain("Invite someone to this plan");
+  expect(posts).toHaveLength(0);
+  expect(shareActions(events)).toHaveLength(0);
+});
+
+it("when a booker reopens an activity they already shared, the saved public link shows without creating or recording anything", async () => {
+  const posts: string[] = [];
+  const events: string[] = [];
+  const savedPublic = inviteOf("public_share", null);
+  await mount(inviteTransport({ myBooking: savedBooking, events, savedPublic, create: (_url, init) => { posts.push(init.body ?? ""); return ok({}, 500); } }), { session: bookerUser });
+  const card = document.querySelector(".invite-card")!;
+  expect(card.textContent).toContain("Public invite");
+  expect(card.querySelector("code")?.textContent).toContain(`?invite=${savedPublic.code}`);
+  expect([...card.querySelectorAll("button")].map((button) => button.textContent)).not.toContain("Or generate a public invite");
   expect(posts).toHaveLength(0);
   expect(shareActions(events)).toHaveLength(0);
 });

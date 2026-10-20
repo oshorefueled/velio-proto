@@ -49,6 +49,15 @@ export function InviteCard({
   const [copied, setCopied] = useState<Rail | null>(null);
   const [copyUnavailable, setCopyUnavailable] = useState(false);
   useEffect(() => {
+    if (sessionToken === null) return;
+    void authorized((api, token) => api.getPublicInvite(token, activityId))
+      .then((invite) => {
+        if (!mounted.current || invite === null || invite.activityId !== activityId) return;
+        setPublicInvite((current) => current ?? invite);
+      })
+      .catch(() => {});
+  }, [activityId, sessionToken]);
+  useEffect(() => {
     if (retryAt === null) return;
     const timer = window.setTimeout(() => updateClock((value) => value + 1), Math.max(0, retryAt - Date.now()));
     return () => window.clearTimeout(timer);

@@ -322,6 +322,13 @@ export class VelioApi {
     }).then((json) => (json as { invite: InviteView }).invite);
   }
 
+  getPublicInvite(token: string, activityId: string, signal?: AbortSignal): Promise<InviteView | null> {
+    return this.request("GET", `/activities/${activityId}/invites/public`, {
+      token,
+      signal,
+    }).then((json) => (json as { invite: InviteView | null }).invite);
+  }
+
   /**
    * invite_share_action (docs/client-contract.md §5): only an actual
    * successful copy or supported share interaction is recorded.

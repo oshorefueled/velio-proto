@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { ActivityValidationError } from "../activities/domain.js";
 import type { IdentityDeps } from "../identity/service.js";
-import { createInvite, resolveInvite, type InvitesDeps } from "./service.js";
+import { createInvite, getPublicShare, resolveInvite, type InvitesDeps } from "./service.js";
 import { requireSession, useDomainErrorHandler } from "../http.js";
 
 export interface InvitesRouteDeps {
@@ -29,6 +29,12 @@ export function registerInvitesRoutes(app: FastifyInstance, deps: InvitesRouteDe
     });
     void reply.code(created ? 201 : 200);
     return { invite, created };
+  });
+
+  app.get("/activities/:id/invites/public", async (request) => {
+    const creator = await requireSession(deps.identity, request);
+    const { id } = request.params as { id: string };
+    return { invite: await getPublicShare(deps.invites, creator, id) };
   });
 
   app.get("/invites/:code", async (request) => {

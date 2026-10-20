@@ -309,6 +309,42 @@ describe("public share routes", () => {
 
   });
 
+  it("reads back only the caller's saved public link without creating one", async () => {
+    const host = await establish(treatmentApp, "Read Share Host");
+    const activityId = await publish(treatmentApp, host, "Read Share");
+    const read = (token?: string) => nextInject(treatmentApp, {
+      method: "GET",
+      url: `/activities/${activityId}/invites/public`,
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    });
+
+    const before = await read(host);
+    expect(before.statusCode).toBe(200);
+    expect(before.json()).toEqual({ invite: null });
+
+    const created = await nextInject(treatmentApp, {
+      method: "POST",
+      url: `/activities/${activityId}/invites`,
+      headers: { authorization: `Bearer ${host}` },
+      payload: { rail: "public_share" },
+    });
+    expect(created.statusCode).toBe(201);
+    const after = await read(host);
+    expect(after.statusCode).toBe(200);
+    expect(after.json().invite).toEqual(created.json().invite);
+
+    const outsider = await establish(treatmentApp, "Read Share Outsider");
+    expect((await read(outsider)).json()).toEqual({ invite: null });
+    expect((await read()).statusCode).toBe(401);
+    await withClient(migrationUrl, async client => {
+      const events = await client.query(
+        "SELECT count(*)::int AS n FROM events WHERE event_name='invite_created' AND activity_id=$1",
+        [activityId],
+      );
+      expect(events.rows[0].n).toBe(1);
+    });
+  });
+
   it("rejects other rails, anonymous creation and unaffiliated creators", async () => {
     const host = await establish(treatmentApp, "Route Share Gates Host");
     const activityId = await publish(treatmentApp, host, "Route Share Gates");
