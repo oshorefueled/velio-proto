@@ -64,6 +64,12 @@ export function App(): ReactNode {
     else promptDialog.current?.close?.();
   }, [needsSignIn, ready]);
 
+  useEffect(() => {
+    if (pageIn(location.search) !== null) return;
+    const url = new URL(location.href);
+    url.searchParams.set("page", page);
+    history.replaceState(null, "", url);
+  }, [page]);
   const syncUrl = useCallback((listPage: Page, activityId: string | null, code: string | null) => {
     const url = new URL(location.href);
     url.searchParams.set("page", listPage);
@@ -149,16 +155,16 @@ export function App(): ReactNode {
       </div>
       {!inviteCode && <>
         {page !== "publish" && (showDetail && selectedId
-            ? <div className="page"><GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onAvailability={setLiveAvailability} onBack={() => selectActivity(null)} backLabel={backLabel} /></div>
-            : <div className="page">
-              <div className="page-head">
-                <h1>{PAGE_TITLE[page].title}</h1>
-                <p className="page-sub">{PAGE_TITLE[page].sub}</p>
-              </div>
-              {page === "explore" ? <ActivityBrowser selectedId={selectedId} onSelect={selectActivity} bookingRevision={bookingRevision} live={liveAvailability} />
-                : page === "hosting" ? <HostedActivities activities={hosted.activities} selectedId={selectedId} onSelect={selectActivity} reload={reloadHosted} loading={hosted.loading} error={hosted.error} />
-                  : ready ? <SavedBookings onSelect={selectActivity} /> : <p className="hint">Sign in to see your bookings.</p>}
-            </div>)}
+          ? <div className="page"><GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onAvailability={setLiveAvailability} onBack={() => selectActivity(null)} backLabel={backLabel} /></div>
+          : <div className="page">
+            <div className="page-head">
+              <h1>{PAGE_TITLE[page].title}</h1>
+              <p className="page-sub">{PAGE_TITLE[page].sub}</p>
+            </div>
+            {page === "explore" ? <ActivityBrowser selectedId={selectedId} onSelect={selectActivity} bookingRevision={bookingRevision} live={liveAvailability} />
+              : page === "hosting" ? <HostedActivities activities={hosted.activities} selectedId={selectedId} onSelect={selectActivity} reload={reloadHosted} loading={hosted.loading} error={hosted.error} />
+                : ready ? <SavedBookings onSelect={selectActivity} /> : <p className="hint">Sign in to see your bookings.</p>}
+          </div>)}
       </>}
     </main>
   </div>;
