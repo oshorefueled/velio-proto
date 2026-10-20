@@ -1339,6 +1339,11 @@ dialog.overlay::backdrop {
   background: rgba(16, 24, 40, 0.45);
 }
 
+.overlay > .button-ghost {
+  background: var(--surface);
+  color: var(--ink);
+}
+
 .invite-card .invite-prompt {
   font-size: 1.05rem;
   font-weight: 650;

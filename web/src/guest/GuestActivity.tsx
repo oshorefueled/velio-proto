@@ -318,7 +318,7 @@ export function GuestActivity({
       <section className="activity-page" aria-label="Activity">
         {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
         <div className="notice notice-warn" role="alert">
-          {loadError} Availability is unknown, not zero.
+          {loadError.replace(/\.?$/, ".")} Availability is unknown, not zero.
         </div>
         <button type="button" className="button-primary" onClick={() => setRefresh((value) => value + 1)}>
           Retry

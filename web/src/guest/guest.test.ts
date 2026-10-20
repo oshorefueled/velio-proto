@@ -337,8 +337,7 @@ it("when activity details fail, Retry keeps the selection and availability stays
     { authenticated: false },
   );
   const body = document.body.textContent ?? "";
-  expect(body).toContain("Details unavailable");
-  expect(body).toContain("Availability is unknown");
+  expect(body).toContain("Details unavailable. Availability is unknown, not zero.");
   expect(body).not.toContain("0 booked");
   expect(body).not.toContain("Full");
   fail = false;
