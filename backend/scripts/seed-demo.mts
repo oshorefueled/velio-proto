@@ -30,7 +30,7 @@ try {
       day: 2, start: "18:30", end: "20:30", priceMinorUnits: 3500, spots: 8 },
     { title: "Secret Speakeasy Tour", description: "An evening of hidden bars and good stories, shared with people worth meeting.",
       itinerary: "Meet your host at the first bar. Visit three hidden bars, one drink at each. Finish somewhere quieter to talk.",
-      day: 3, start: "20:00", end: "23:00", priceMinorUnits: 4500, spots: 10 },
+      day: 3, start: "20:00", end: "23:00", priceMinorUnits: 4500, spots: 10, open: true },
     { title: "Morning Coastal Walk", description: "An easy walk along the coast, with coffee and conversation along the way.",
       itinerary: "Meet your host at the trailhead. Walk the coast path at an easy pace. Coffee together at the end.",
       day: -7, start: "08:00", end: "10:00", priceMinorUnits: 1200, spots: 12 },
@@ -46,7 +46,7 @@ try {
       }, host.session.token);
       activity = publication.activity;
       await operator.query("UPDATE activities SET dataset='demo' WHERE id=$1", [activity.id]);
-      await request("POST", `/activities/${activity.id}/bookings`, { operationId: randomUUID() }, booker.session.token);
+      if (!fixture.open) await request("POST", `/activities/${activity.id}/bookings`, { operationId: randomUUID() }, booker.session.token);
       if (fixture.day !== ahead) {
         await operator.query("UPDATE activities SET starts_at=$2, ends_at=$3 WHERE id=$1",
           [activity.id, londonInstant(fixture.day, fixture.start), londonInstant(fixture.day, fixture.end)]);

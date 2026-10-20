@@ -57,7 +57,7 @@ In another terminal, `curl -s localhost:3001/readyz` returns `{"status":"ok",...
 `seed:demo` creates labelled synthetic data. Every fixture has `dataset='demo'`, which keeps it out of the default real-cohort reports. It creates:
 
 - a demo host (`host@velio.test`) with three activities in London time, priced in GBP, one of which has already started;
-- a demo booker (`booker@velio.test`) with saved bookings in them.
+- a demo booker (`booker@velio.test`) with saved bookings in two of them. Secret Speakeasy Tour starts fully open, so a booking can be made live during a demo.
 
 Re-running the seed reuses these fixtures. A database seeded before the current fixtures keeps its older ones alongside them, so start a demo from a clean first boot (`docker compose down -v`, then migrate and seed).
 
