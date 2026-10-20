@@ -166,7 +166,7 @@ A viewer that reconnects presents its previous connection ID. That lets its reco
 
 ### Invitations and attribution
 
-| | Vouch ("Invite someone") | Public link ("Copy public link") |
+| | Vouch ("Invite") | Public link ("Or generate a public invite") |
 | --- | --- | --- |
 | Binding | Bound to one recipient email; redeemable once | Reusable; one per sharing account and activity |
 | Expiry | When the activity starts | When the activity starts |

@@ -27,7 +27,7 @@ The service contains activity/plan, booking, invitation/attribution and tracking
 | Record | Responsibility and important rules |
 | --- | --- |
 | Account | Unique email, display name, creation time and immutable signup acquisition/generation. An account can host and book. An account acquired directly starts at generation 0. |
-| Activity | Host, title, description, start instant, display timezone, price/currency, capacity, booked count and increasing availability version. Store money in integer minor units and the start instant in UTC. |
+| Activity | Host, title, description, start and end instants, country, display timezone, price/currency, capacity, booked count and increasing availability version. The display timezone follows from the country. Store money in integer minor units and both instants in UTC. |
 | Plan | Unique activity reference and shared itinerary. One activity has one plan. |
 | Booking | Account, activity, plan and confirmation time. A unique account/activity key prevents duplicate spots. References ensure the plan belongs to the booked activity. |
 | Invitation | Unpredictable code, activity/plan, inviter, vouch/public type, optional vouch recipient email, generation and creation time. Its booking deadline follows the activity start. A public invitation is reusable and associated with its sharing account. |
@@ -83,7 +83,7 @@ An invitation snapshots the inviter's signup generation plus one. A newly acquir
 
 Use restrictive database grants and rejecting update/delete triggers for committed attribution and acquisition fields. Keep migration privileges separate and prevent cascading deletion of acquisition history. Record invitation creation and redemption timestamps so the stored relationship can be audited.
 
-Copy public link creates or retrieves the sharing account's reusable public invitation. The action remains available when the activity is full; the landing page explains whether a new booking is possible.
+Generating a public invite creates the sharing account's reusable public invitation, or returns it if it already exists. Its link is then shown with Copy. Generating remains available when the activity is full; the landing page explains whether a new booking is possible.
 
 ### 2.5 Rollout and feature control
 
@@ -114,7 +114,7 @@ A declared load run reports request counts, concurrency, connected viewers, fail
 
 Hosts create activities and want people to join them. Bookers choose an activity, secure a spot and bring friends. Invited guests need enough context to decide whether to join, followed by a short path to confirmation.
 
-The activity page shows its description, itinerary, date/time/timezone, price and remaining spots, together with the host's name, summary and previous activities. The Plan is the shared itinerary that bookers join. A successfully booked guest becomes a booker using the same account.
+The activity page shows its description, itinerary, date and time, duration, country, price and remaining spots, together with the host's name, summary and previous activities. Times are shown in the activity's timezone, with its GMT offset when that differs from the viewer's. The Plan is the shared itinerary that bookers join. A successfully booked guest becomes a booker using the same account.
 
 The prototype has a horizontal Host / Booker / Guest selector on web. Host and Booker open seeded accounts with activities and bookings respectively. Guest provides email sign-in to another account, including one created on mobile; signing out returns to Sign in. These are access shortcuts for accounts with the same hosting and booking capabilities.
 
@@ -122,10 +122,10 @@ On mobile, an invitation can be previewed while signed out. Email entry at check
 
 ### 3.2 Host journey on web
 
-1. Create an activity with its title, description, itinerary, future date/time, timezone, capacity, price and currency. Preserve entered information and show field-specific validation errors.
+1. Create an activity with its title, description, itinerary, future date and start time, end time, country, capacity, price and currency. The country sets the activity's timezone. Preserve entered information and show field-specific validation errors.
 2. Publish it and open its activity page. Show the booked count, remaining spots and booked participants' names and masked emails.
 3. Watch bookings update without manual refresh. These records show who booked; physical attendance remains a separate, unimplemented capability.
-4. Invite someone personally by entering their email and sharing the resulting link/code, or use Copy public link for general sharing.
+4. Invite from the activity page: enter someone's email to create a personal invitation and share its link, or generate the reusable public invite and copy its link for general sharing.
 
 Hosting itself consumes no bookable spot. If the host books through the same account, that booking uses capacity under the ordinary rules.
 
@@ -134,8 +134,8 @@ Hosting itself consumes no bookable spot. If the host books through the same acc
 1. Browse activities and review the activity, itinerary, host, price and availability.
 2. Continue to checkout. Use the signed-in account, or enter an email to create/open an account while preserving the activity.
 3. Confirm the booking. Optimistically show a pending booking and prevent repeated button submission. Replace it with the saved confirmation on success, or remove the pending state and refresh availability on failure. Confirm the spot after the server saves it.
-4. Show the saved booking with two sharing actions: Invite someone and Copy public link.
-5. For a vouch, enter the intended recipient's email and share the generated invitation. For public sharing, copy the reusable attributed link directly.
+4. Show the saved booking on the activity page, followed by the activity's details and an invite card with two sharing actions: invite someone you can vouch for, and generate a public invite.
+5. For a vouch, enter the intended recipient's email and share the generated invitation. For public sharing, generate the reusable attributed link, then copy it.
 6. Return to the activity or saved booking later. Repeating a confirmed booking returns the existing spot.
 
 ### 3.4 Invited guest journey in the mobile app
@@ -183,7 +183,7 @@ Payment processing, full authentication, trust scores and host verification rema
 
 **Mobile entry limitation.** Link/code routing is demonstrated with an installed Flutter app. Store installation, deferred-link handoff and domain verification are separate follow-up work; no store publication is required for the prototype.
 
-**Material planning revisions.** Email-based account entry and recipient binding replace the initial demo-contact selection design. Plan now explicitly represents the shared itinerary. Public sharing uses Copy public link rather than a separate Generate action. The initial host-completion proposal is removed pending an operational definition, and Flutter claiming takes priority over desktop claiming. These revisions change the planned journeys and measurement commitments.
+**Material planning revisions.** Email-based account entry and recipient binding replace the initial demo-contact selection design. Plan now explicitly represents the shared itinerary. Public sharing has a separate Generate step that creates the reusable public link, which is then copied. Hosts choose a country rather than a timezone, and the activity's timezone follows from the country. The initial host-completion proposal is removed pending an operational definition, and Flutter claiming takes priority over desktop claiming. These revisions change the planned journeys and measurement commitments.
 
 ## 4. Tracking implementation plan
 
@@ -196,7 +196,7 @@ Report each result with its numerator, denominator or sample count, observation 
 | Never oversell | Count activities whose confirmed bookings exceed capacity; reconcile stored booked count with actual booking rows. | Zero oversold bookings. | Any oversell or mismatch triggers investigation and suspension of new bookings for the affected activity. |
 | Bookings succeed when spots exist | Successful eligible attempts for a new booking divided by eligible attempts. Assess account, invitation, deadline and capacity at the locked decision. Report replays, expected sell-outs and invalid requests separately; unexplained errors with unknown availability count as failures until classified. | At least 99.5%. | A declared test run or reporting interval below 99.5%; inspect error categories and lock waits. |
 | Availability feels live | For each booking, measure applied state across expected viewing clients; take that booking's slowest viewer, then p95 across bookings. Retain late and missing acknowledgements. | p95 at most 2 seconds. | p95 above 2 seconds or a missing expected acknowledgement. |
-| Bookers become inviters | Distinct cohort bookers creating an invitation for their cohort-entry booked activity divided by all distinct cohort bookers. First public-copy creation qualifies; page display does not. | At least 30%. | A completed seven-day treatment cohort below 30%; inspect action exposure, sharing and capacity. |
+| Bookers become inviters | Distinct cohort bookers creating an invitation for their cohort-entry booked activity divided by all distinct cohort bookers. Generating a public invite for the first time qualifies; page display does not. | At least 30%. | A completed seven-day treatment cohort below 30%; inspect action exposure, sharing and capacity. |
 | Opened invitations become claims | Distinct person/visitor-invitation pairs producing a new attributed booking divided by opened pairs with complete observation windows. Include and segment full/expired landings. | At least 25%. | A completed seven-day treatment cohort below 25%; inspect invitation type, client, landing state, account entry and booking outcome. |
 | K-factor by invitation type | Newly acquired accounts directly attributed to a fixed existing-inviter cohort, separated by vouch/public, divided by everyone in that cohort, including non-inviters. | No numerical target supplied. | A completed cohort below the preceding cohort, or acquired accounts failing to progress to booking; inspect counts and uncertainty. |
 | Plans that actually happen | Unmeasured pending a definition of attendance/occurrence evidence and how it is collected. Booking totals remain an intermediate outcome. | No numerical target supplied. | Resolve the operational definition before assessing this outcome or using it to judge experiment success. |
@@ -216,7 +216,7 @@ Report sample sizes and uncertainty alongside rates. A small or empty cohort can
 | `activity_viewed` | Client: activity details have been displayed, with web/mobile channel. |
 | `booking_attempted` | Server: each received attempt, with an attempt ID and an operation ID linking retries. |
 | `booking_confirmed`, `booking_sold_out`, `booking_failed` | Server: saved outcome or failure category. Distinguish a new booking from replaying an existing result. |
-| `invite_created` | Server: a vouch is created, or first public-copy use creates the sharing account's invitation. Include type, inviter, activity, code reference and generation. |
+| `invite_created` | Server: a vouch is created, or the first Generate creates the sharing account's public invitation. Include type, inviter, activity, code reference and generation. |
 | `invite_share_action` | Client: copy/share action and method. Repeat actions are separate from invitation creation; they do not prove delivery. |
 | `invite_opened` | Client: a resolved invitation preview has been displayed, including its available/full/expired state. Link-preview metadata requests do not count as opens. |
 | `claim_started` | Client: the guest explicitly continues toward checkout. |
