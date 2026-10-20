@@ -181,7 +181,7 @@ it("when a booking request is in flight, submit stays disabled and a second clic
     return ok({});
   });
   await click("Book a spot");
-  const checkout = document.querySelector('[aria-label="Checkout"]');
+  const checkout = document.querySelector('.activity-page');
   expect(checkout).not.toBeNull();
   expect(checkout!.textContent).toContain("Activity a");
   expect(checkout!.textContent).toContain("12:00–14:00");
@@ -375,7 +375,7 @@ it("when booking is requested without an identity, the selection is retained and
   );
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
   await click("Book a spot");
-  expect(document.querySelector('[aria-label="Checkout"]')).not.toBeNull();
+  expect(document.querySelector('[name="email"]')).not.toBeNull();
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
   await fillContact("booker");
   await act(async () => document.querySelector<HTMLInputElement>('[name="email"]')!.closest("form")!.requestSubmit());
@@ -475,7 +475,7 @@ it("when reopening cannot check saved membership, only Check again is offered un
   await settle();
   expect(document.body.textContent).toContain("Review booking");
   await click("Review booking");
-  expect(document.querySelector('[aria-label="Checkout"]')).not.toBeNull();
+  expect([...document.querySelectorAll("button")].some(button => button.textContent === "Book again")).toBe(true);
   expect(posts).toBe(0);
 });
 
@@ -651,7 +651,7 @@ it("when a guest confirms then signs out, signing in with the same email reopens
   await act(async () => document.querySelector('[name="email"]')!.closest("form")!.requestSubmit());
   await settle();
   expect(posts).toBe(0);
-  expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain(user.email);
+  expect(document.querySelector('.activity-page')!.textContent).toContain(user.email);
   await click("Confirm one spot");
   await settle();
   expect(document.body.textContent).toContain("Your spot is saved");
@@ -708,7 +708,7 @@ it("when confirmation expires the credential, restoring access checks the saved 
   await click("Confirm one spot");
   await settle();
   expect(document.body.textContent).toContain("Your spot is saved");
-  expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain(user.email);
+  expect(document.querySelector('.activity-page')!.textContent).toContain(user.email);
   expect(posts).toBe(1);
 });
 
@@ -736,8 +736,9 @@ it.each([
   await click("Confirm one spot");
   await settle();
   expect(document.body.textContent).toContain(message);
-  expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain("€10.50");
+  expect(document.querySelector('.activity-page')!.textContent).toContain("€10.50");
   expect(document.body.textContent).toContain("Activity a");
+  expect(document.body.textContent).toContain("About this activity");
   expect(document.body.textContent).not.toContain("Your spot is saved");
   expect([...document.querySelectorAll("button")].some(button => button.textContent === "Confirm one spot")).toBe(false);
   expect(refreshes).toBeGreaterThan(0);
@@ -773,7 +774,7 @@ it("when an account shortcut is selected during checkout, unmounting email entry
     await settle();
     expect(document.querySelector(".account-viewing")?.textContent).toContain(`${account} account`);
     expect(document.body.textContent).not.toContain("Opening account…");
-    expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain(email);
+    expect(document.querySelector('.activity-page')!.textContent).toContain(email);
     entry = deferred<Awaited<ReturnType<Transport>>>();
   }
   expect(emails).toEqual(["host@velio.test", "booker@velio.test"]);
@@ -874,7 +875,7 @@ it("when the activity fills during checkout, the booking control shows Full and 
   expect(posts).toBe(0);
 });
 
-it("when a booking is confirmed from checkout, Back to activity returns to the full activity page", async () => {
+it("when a spot is reviewed and confirmed, the activity details stay on the page", async () => {
   await mount(async (url, init) => {
     if (url.endsWith("/bookings") && init.method === "POST") return ok(bookingEnvelope(true), 201);
     if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
@@ -885,15 +886,34 @@ it("when a booking is confirmed from checkout, Back to activity returns to the f
     return ok({});
   });
   await click("Book a spot");
+  expect(document.body.textContent).toContain("About this activity");
+  expect(document.body.textContent).toContain("Previous activities");
+  expect(document.body.textContent).not.toContain("Back to activity");
   await click("Confirm one spot");
   await settle();
-  expect(document.body.textContent).toContain("Your spot is saved");
-  expect(document.body.textContent).not.toContain("About this activity");
-  await click("Back to activity");
-  await settle();
-  expect(document.querySelector('[aria-label="Checkout"]')).toBeNull();
-  expect(document.body.textContent).toContain("About this activity");
   expect(document.querySelector(".aside-card .notice-good")!.textContent).toContain("Your spot is saved");
+  expect(document.body.textContent).toContain("About this activity");
+  expect(document.body.textContent).toContain("Previous activities");
+});
+
+it("when a spot review is cancelled, Book a spot returns without sending a booking", async () => {
+  let posts = 0;
+  await mount(async (url, init) => {
+    if (url.endsWith("/bookings") && init.method === "POST") posts += 1;
+    if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.endsWith("/my/activities")) return ok({ activities: [] });
+    if (url.endsWith("/participants")) return ok({ error: { code: "forbidden", message: "Owning host only" } }, 403);
+    if (url.includes("/activities/a")) return ok({ activity: detailOf("a"), invites: {} });
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  });
+  await click("Book a spot");
+  await click("Cancel");
+  const buttons = [...document.querySelectorAll("button")].map(button => button.textContent);
+  expect(buttons).toContain("Book a spot");
+  expect(buttons).not.toContain("Confirm one spot");
+  expect(document.body.textContent).toContain("About this activity");
+  expect(posts).toBe(0);
 });
 
 it("when an invitation link is opened and left, the unpublished draft is kept", async () => {
