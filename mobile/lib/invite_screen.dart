@@ -151,8 +151,51 @@ class _InviteScreenState extends State<InviteScreen>
                   ),
                 ),
               ),
+            if (controller.preview != null && controller.cachedAt != null)
+              Card(
+                key: const Key('offline-banner'),
+                color: const Color(0xFFFFF4E5),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'You are offline',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        'Saved ${DateFormat.yMMMd().add_jm().format(controller.cachedAt!.toLocal())}. '
+                        'Availability may have changed since then.',
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                        key: const Key('refresh-preview'),
+                        onPressed: controller.refreshing
+                            ? null
+                            : () => controller.refreshPreview(),
+                        child: Text(
+                          controller.refreshing ? 'Checking…' : 'Try again',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             if (controller.preview != null)
               _PreviewCard(controller: controller),
+            if (controller.offlineNotice != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  controller.offlineNotice!,
+                  key: const Key('offline-notice'),
+                  style: const TextStyle(
+                    color: Color(0xFF8A5300),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             if (controller.preview != null &&
                 !controller.checkout &&
                 controller.claimState is! ClaimConfirmed &&

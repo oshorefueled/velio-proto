@@ -72,6 +72,24 @@ class StoredSession {
   }
 }
 
+/// Previously loaded public invitation facts (ticket 06): readable offline
+/// with their fetch time; never a booking or an account view.
+class CachedPreview {
+  CachedPreview({required this.json, required this.fetchedAt});
+  final Map<String, dynamic> json;
+  final String fetchedAt;
+
+  Map<String, Object?> toJson() => {'json': json, 'fetchedAt': fetchedAt};
+
+  static CachedPreview fromJson(Object? json) {
+    final map = (json as Map).cast<String, dynamic>();
+    return CachedPreview(
+      json: (map['json'] as Map).cast<String, dynamic>(),
+      fetchedAt: map['fetchedAt'] as String,
+    );
+  }
+}
+
 class StoredDevice {
   StoredDevice({
     required this.visitorId,
@@ -80,13 +98,28 @@ class StoredDevice {
     this.visitId,
     this.invitationVisitorId,
     Map<String, StoredOperation> operations = const {},
-  }) : operations = Map.of(operations);
+    Map<String, CachedPreview> previews = const {},
+  }) : operations = Map.of(operations),
+       previews = Map.of(previews);
   final String visitorId;
   StoredSession? session;
   String? lastCode;
   String? visitId;
   String? invitationVisitorId;
   final Map<String, StoredOperation> operations;
+
+  /// Keyed by invitation code, oldest first; bounded by [cachePreview].
+  final Map<String, CachedPreview> previews;
+
+  static const maxCachedPreviews = 10;
+
+  void cachePreview(String code, CachedPreview preview) {
+    previews.remove(code);
+    previews[code] = preview;
+    while (previews.length > maxCachedPreviews) {
+      previews.remove(previews.keys.first);
+    }
+  }
 
   Map<String, Object?> toJson() => {
     'visitorId': visitorId,
@@ -95,6 +128,7 @@ class StoredDevice {
     if (visitId != null) 'visitId': visitId,
     if (invitationVisitorId != null) 'invitationVisitorId': invitationVisitorId,
     'operations': operations.map((key, value) => MapEntry(key, value.toJson())),
+    'previews': previews.map((key, value) => MapEntry(key, value.toJson())),
   };
 
   static StoredDevice fromJson(Object? json) {
@@ -111,8 +145,24 @@ class StoredDevice {
       visitId: map['visitId'] as String?,
       invitationVisitorId: map['invitationVisitorId'] as String?,
       operations: operations,
+      previews: _readPreviews(map['previews']),
     );
   }
+}
+
+/// A damaged cache entry is dropped on its own; it must never cost the
+/// remembered account or a pending claim operation.
+Map<String, CachedPreview> _readPreviews(Object? raw) {
+  final previews = <String, CachedPreview>{};
+  if (raw is! Map) return previews;
+  for (final entry in raw.entries) {
+    try {
+      previews[entry.key as String] = CachedPreview.fromJson(entry.value);
+    } catch (_) {
+      // Skip the unreadable entry.
+    }
+  }
+  return previews;
 }
 
 /// File-backed store; the directory is injectable so tests use a temp
