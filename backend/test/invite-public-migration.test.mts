@@ -12,7 +12,7 @@ it("when historical public links conflict, migration refuses uniqueness without 
   await withClient(url, client => client.query("DROP INDEX invites_public_account_activity; DELETE FROM schema_migrations WHERE name='0013_reusable_public_invites.sql'"));
   await withClient(url, client => client.query(`
     WITH u AS (INSERT INTO users (contact_key,display_name,signup_source,signup_generation) VALUES ('historical@example.test','Historical','direct',0) RETURNING id),
-    a AS (INSERT INTO activities (host_id,title,starts_at,display_timezone,price_minor_units,currency,capacity) SELECT id,'Historical',now()+interval '48 hours','UTC',100,'EUR',5 FROM u RETURNING id,host_id),
+    a AS (INSERT INTO activities (host_id,title,starts_at,ends_at,display_timezone,price_minor_units,currency,capacity) SELECT id,'Historical',now()+interval '48 hours',now()+interval '50 hours','UTC',100,'EUR',5 FROM u RETURNING id,host_id),
     p AS (INSERT INTO plans (activity_id) SELECT id FROM a RETURNING id,activity_id)
     INSERT INTO invites (code,rail,creator_id,activity_id,plan_id,generation,expires_at)
     SELECT code,'public_share',a.host_id,a.id,p.id,1,now()+interval '24 hours'

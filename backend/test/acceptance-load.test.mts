@@ -20,14 +20,14 @@ describe("acceptance runners", () => {
     const migrationUrl = urlFor("MIGRATION_DATABASE_URL", "velio_test");
     const sentinel = await withClient(migrationUrl, async client => {
       const user = await client.query("INSERT INTO users (contact_key, display_name, signup_source, signup_generation) VALUES ($1, 'Unrelated', 'direct', 0) RETURNING id", [`acceptance-unrelated-${randomUUID()}`]);
-      const activity = await client.query(`INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-        VALUES ($1, 'acceptance unrelated real activity', now() + interval '2 days', 'UTC', 0, 'EUR', 1) RETURNING id`, [user.rows[0].id]);
+      const activity = await client.query(`INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+        VALUES ($1, 'acceptance unrelated real activity', now() + interval '2 days', now() + interval '50 hours', 'UTC', 0, 'EUR', 1) RETURNING id`, [user.rows[0].id]);
       return { userId: user.rows[0].id, activityId: activity.rows[0].id };
     });
     const walkthroughSentinel = await withClient(migrationUrl, async client => {
       const user = await client.query("INSERT INTO users (contact_key, display_name, signup_source, signup_generation) VALUES ($1, 'Unrelated', 'direct', 0) RETURNING id", [`walkthrough-unrelated-${randomUUID()}`]);
-      const activity = await client.query(`INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-        VALUES ($1, 'walkthrough unrelated real activity', now() + interval '2 days', 'UTC', 0, 'EUR', 1) RETURNING id`, [user.rows[0].id]);
+      const activity = await client.query(`INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+        VALUES ($1, 'walkthrough unrelated real activity', now() + interval '2 days', now() + interval '50 hours', 'UTC', 0, 'EUR', 1) RETURNING id`, [user.rows[0].id]);
       return { userId: user.rows[0].id, activityId: activity.rows[0].id };
     });
     const walkthrough = await runWalkthrough();

@@ -41,6 +41,7 @@ function validInput(overrides: Partial<Record<string, unknown>> = {}) {
   return { description: "A guided activity.", itinerary: "Meet, explore, return.",
     title: "Sunset Kayaking",
     startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+    endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
     timezone: "Europe/Berlin",
     priceMinorUnits: 4500,
     currency: "EUR",
@@ -82,6 +83,15 @@ describe("publishActivity", () => {
     );
   });
 
+  it("keeps an end that crosses midnight and an optional country", async () => {
+    const late = await publishActivity(deps, host, validInput({
+      startsAt: "2099-06-01T21:30:00Z", endsAt: "2099-06-02T01:00:00Z", country: "GB",
+    }));
+    expect(late.activity).toMatchObject({ startsAt: "2099-06-01T21:30:00.000Z", endsAt: "2099-06-02T01:00:00.000Z", country: "GB" });
+    const anywhere = await publishActivity(deps, host, validInput({ country: "" }));
+    expect(anywhere.activity.country).toBeNull();
+  });
+
   it("keeps independently published activities on their own plans", async () => {
     const first = await publishActivity(deps, host, validInput({ title: "First" }));
     const second = await publishActivity(deps, host, validInput({ title: "Second" }));
@@ -102,6 +112,10 @@ describe("publishActivity", () => {
       ["title", validInput({ title: "" })],
       ["title", validInput({ title: "   " })],
       ["startsAt", validInput({ startsAt: "not-a-date" })],
+      ["endsAt", validInput({ endsAt: undefined })],
+      ["endsAt", validInput({ endsAt: "not-a-date" })],
+      ["endsAt", validInput({ startsAt: "2099-06-01T10:00:00Z", endsAt: "2099-06-01T10:00:00Z" })],
+      ["country", validInput({ country: "US" })],
       ["timezone", validInput({ timezone: "Mars/Olympus" })],
       ["priceMinorUnits", validInput({ priceMinorUnits: -1 })],
       ["priceMinorUnits", validInput({ priceMinorUnits: 10.5 })],

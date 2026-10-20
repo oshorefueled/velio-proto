@@ -94,6 +94,7 @@ async function publishActivity(app: App, token: string, title: string): Promise<
     payload: { description: "A guided activity.", itinerary: "Meet, explore, return.",
       title,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
       timezone: "UTC",
       priceMinorUnits: 2500,
       currency: "EUR",

@@ -1,5 +1,5 @@
 import { formatMoneyCompact } from "../money.js";
-import { chipDateTime, hostStatus, initials, zoneLabel } from "../present.js";
+import { chipDateRange, hostStatus, initials, zoneLabel } from "../present.js";
 import { ArrowRightIcon, CalendarIcon } from "../icons.js";
 import type { ReactNode } from "react";
 import type { HostActivityView } from "../api.js";
@@ -61,11 +61,11 @@ export function HostedActivities({
               >
                 <span className="hosted-row-main">
                   <span className="chip-row">
-                    <span className="chip"><CalendarIcon /> {chipDateTime(activity.startsAt, activity.timezone)}</span>
+                    <span className="chip"><CalendarIcon /> {chipDateRange(activity.startsAt, activity.endsAt, activity.timezone)}</span>
                     <span className="chip">{zoneLabel(activity.timezone)}</span>
                   </span>
                   <span className="hosted-row-title">{activity.title}</span>
-                  <span className="hosted-by">{hostName && <><span className="avatar">{initials(hostName)}</span> Hosted by {hostName.split(" · ")[0]}</>}</span>
+                  <span className="hosted-by">{hostName && <><span className="avatar">{initials(hostName)}</span> Hosted by {hostName}</>}</span>
                   {activity.description && <span className="hosted-row-desc">{activity.description}</span>}
                 </span>
                 <span className="hosted-row-status">

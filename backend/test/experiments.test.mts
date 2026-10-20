@@ -41,6 +41,7 @@ function input(title: string) {
   return { description: "A guided activity.", itinerary: "Meet, explore, return.",
     title,
     startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+    endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
     timezone: "UTC",
     priceMinorUnits: 1000,
     currency: "EUR",
@@ -53,8 +54,8 @@ async function insertLegacyActivity(title: string): Promise<string> {
   return withClient(migrationUrl, (client) =>
     client
       .query(
-        `INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-         VALUES ($1, $2, now() + interval '48 hours', 'UTC', 100, 'EUR', 5) RETURNING id`,
+        `INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+         VALUES ($1, $2, now() + interval '48 hours', now() + interval '50 hours', 'UTC', 100, 'EUR', 5) RETURNING id`,
         [host.id, title],
       )
       .then((r) => r.rows[0].id as string),

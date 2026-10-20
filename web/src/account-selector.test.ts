@@ -20,7 +20,7 @@ it("when Host entry is pending and Guest is selected, a late Host response canno
     const click = async (text: string) => act(async () => [...container.querySelectorAll("button")].find(b => b.textContent === text)!.click());
     await click("Host");
     await click("Guest");
-    await act(async () => resolve({ status: 200, json: { session: { token: "old" }, user: { id: "host", email: "host@demo.velio.test", displayName: "Old Host" }, created: false } }));
+    await act(async () => resolve({ status: 200, json: { session: { token: "old" }, user: { id: "host", email: "host@velio.test", displayName: "Old Host" }, created: false } }));
     expect(container.textContent).toContain("Sign in");
     expect(container.textContent).not.toContain("Old Host");
     expect(localStorage.getItem("velio.session.v1")).toBeNull();

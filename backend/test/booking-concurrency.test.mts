@@ -103,6 +103,7 @@ async function httpPublish(token: string, capacity: number): Promise<string> {
     body: JSON.stringify({ description: "A guided activity.", itinerary: "Meet, explore, return.",
       title: "Concurrency Kayak",
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
       timezone: "UTC",
       priceMinorUnits: 1000,
       currency: "EUR",

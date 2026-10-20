@@ -1,5 +1,5 @@
 import { formatMoneyCompact } from "../money.js";
-import { chipDateTime, initials, zoneLabel } from "../present.js";
+import { chipDateRange, initials, zoneLabel } from "../present.js";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PublicActivityView } from "../api.js";
 import { compareVersions } from "../live/availability.js";
@@ -13,10 +13,6 @@ import { ArrowRightIcon, CalendarIcon } from "../icons.js";
  * state offers Retry instead of facts. Selection is the app's single
  * selected activity (URL-persistent) and opens the full detail page.
  */
-
-function hostFirstName(hostDisplayName: string): string {
-  return hostDisplayName.split(" · ")[0];
-}
 
 function CardSpots({ activity }: { activity: PublicActivityView }): ReactNode {
   if (activity.started) {
@@ -109,11 +105,11 @@ export function ActivityBrowser({
               aria-current={activity.id === selectedId ? "true" : undefined}
             >
               <span className="chip-row">
-                <span className="chip"><CalendarIcon /> {chipDateTime(activity.startsAt, activity.timezone)}</span>
+                <span className="chip"><CalendarIcon /> {chipDateRange(activity.startsAt, activity.endsAt, activity.timezone)}</span>
                 <span className="chip">{zoneLabel(activity.timezone)}</span>
               </span>
               <span className="card-title">{activity.title}</span>
-              <span className="hosted-by"><span className="avatar">{initials(activity.hostDisplayName)}</span> Hosted by {hostFirstName(activity.hostDisplayName)}</span>
+              <span className="hosted-by"><span className="avatar">{initials(activity.hostDisplayName)}</span> Hosted by {activity.hostDisplayName}</span>
               {activity.description && <span className="card-desc">{activity.description}</span>}
               <span className="card-foot">
                 <span className="card-price">{formatMoneyCompact(activity.priceMinorUnits, activity.currency)}<span className="card-price-sub">per person</span></span>

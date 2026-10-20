@@ -56,10 +56,10 @@ In another terminal, `curl -s localhost:3001/readyz` returns `{"status":"ok",...
 
 `seed:demo` creates labelled synthetic data. Every fixture has `dataset='demo'`, which keeps it out of the default real-cohort reports. It creates:
 
-- a demo host (`host@demo.velio.test`) with three activities, one of which has already started;
-- a demo booker (`booker@demo.velio.test`) with saved bookings in them.
+- a demo host (`host@velio.test`) with three activities in London time, priced in GBP, one of which has already started;
+- a demo booker (`booker@velio.test`) with saved bookings in them.
 
-Re-running the seed reuses these fixtures.
+Re-running the seed reuses these fixtures. A database seeded before the current fixtures keeps its older ones alongside them, so start a demo from a clean first boot (`docker compose down -v`, then migrate and seed).
 
 The default treatment allocation is 10% (`.env.example`), so most new activities would land in the control group and couldn't issue invitations. The `100` override above puts demo activities in treatment so both invitation types can be shown. Saved assignments never change when the allocation changes.
 

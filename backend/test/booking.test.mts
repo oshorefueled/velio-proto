@@ -63,8 +63,8 @@ async function publishActivity(hostId: string, capacity: number, startsInMs = 48
     client
       .query(
         `WITH new_activity AS (
-           INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-           VALUES ($1, 'Race Kayak', now() + make_interval(secs => $2), 'UTC', 1000, 'EUR', $3)
+           INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+           VALUES ($1, 'Race Kayak', now() + make_interval(secs => $2), now() + make_interval(secs => $2) + interval '2 hours', 'UTC', 1000, 'EUR', $3)
            RETURNING id
          ), new_plan AS (
            INSERT INTO plans (activity_id) SELECT id FROM new_activity RETURNING id

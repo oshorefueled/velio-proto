@@ -298,6 +298,11 @@ class _PreviewCard extends StatelessWidget {
             Text(
               'Starts ${_formatInZone(activity.startsAt, activity.timezone)}',
             ),
+            if (activity.endsAt != null)
+              Text(
+                'Ends ${_formatInZone(activity.endsAt!, activity.timezone)} · ${durationLabel(activity.startsAt, activity.endsAt!)}',
+              ),
+            if (activity.country != null) Text(countryName(activity.country!)),
             Text(_formatPrice(activity.priceMinorUnits, activity.currency)),
             Text(
               'Invitation expires ${_formatInZone(preview.expiresAt, activity.timezone)}',
@@ -664,6 +669,29 @@ String _formatInZone(String iso, String zone) {
     return '${DateFormat('EEE, MMM d, yyyy • h:mm a').format(instant)} (UTC)';
   }
 }
+
+String durationLabel(String startsAt, String endsAt) {
+  final minutes = DateTime.parse(endsAt)
+      .difference(DateTime.parse(startsAt))
+      .inMinutes;
+  final hours = minutes ~/ 60;
+  final rest = minutes % 60;
+  if (hours == 0) return '$rest min';
+  if (rest == 0) return hours == 1 ? '1 hour' : '$hours hours';
+  return '$hours h $rest min';
+}
+
+const _countryNames = {
+  'GB': 'United Kingdom',
+  'IE': 'Ireland',
+  'FR': 'France',
+  'DE': 'Germany',
+  'NL': 'Netherlands',
+  'ES': 'Spain',
+  'NG': 'Nigeria',
+};
+
+String countryName(String code) => _countryNames[code] ?? code;
 
 String _formatPrice(int minorUnits, String currency) {
   final format = NumberFormat.simpleCurrency(name: currency);

@@ -78,8 +78,8 @@ async function insertActivity(
     "SELECT created_at FROM users WHERE id=$1", [input.hostId],
   )).rows[0]!.created_at.toISOString();
   const activity = await client.query<{ id: string }>(
-    `INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity, dataset, created_at)
-     VALUES ($1, $2, $3, 'UTC', 1000, 'EUR', $4, $5, $6)
+    `INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity, dataset, created_at)
+     VALUES ($1, $2, $3, $3::timestamptz + interval '2 hours', 'UTC', 1000, 'EUR', $4, $5, $6)
      RETURNING id`,
     [input.hostId, input.title, input.startsAt, input.capacity ?? 5, input.dataset ?? "real", createdAt],
   );

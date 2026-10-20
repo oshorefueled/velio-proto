@@ -22,7 +22,9 @@ beforeAll(async () => {
 interface ActivityOverrides {
   title?: string;
   starts_at?: string;
+  ends_at?: string;
   display_timezone?: string;
+  country_code?: string;
   price_minor_units?: string;
   currency?: string;
   capacity?: string;
@@ -33,6 +35,7 @@ async function publish(overrides: ActivityOverrides = {}) {
   const values: Record<string, string> = {
     title: `'Sunset Kayaking'`,
     starts_at: `now() + interval '48 hours'`,
+    ends_at: `now() + interval '50 hours'`,
     display_timezone: `'Europe/Berlin'`,
     price_minor_units: `4500`,
     currency: `'EUR'`,
@@ -65,8 +68,8 @@ describe("activities schema", () => {
   it("publishes with safe defaults: booked_count 0 and availability_version 1", async () => {
     const result = await withClient(appUrl, (client) =>
       client.query(
-        `INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-         VALUES ($1, 'Defaults Kayaking', now() + interval '48 hours', 'UTC', 1000, 'EUR', 4)
+        `INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+         VALUES ($1, 'Defaults Kayaking', now() + interval '48 hours', now() + interval '50 hours', 'UTC', 1000, 'EUR', 4)
          RETURNING booked_count, availability_version`,
         [hostId],
       ),
@@ -82,14 +85,16 @@ describe("activities schema", () => {
     await expect(publish({ currency: "'EURO'" }), "overlong currency").rejects.toThrow(/check/i);
     await expect(publish({ display_timezone: "''" }), "empty timezone").rejects.toThrow(/check/i);
     await expect(publish({ title: "''" }), "empty title").rejects.toThrow(/check/i);
+    await expect(publish({ ends_at: "now() + interval '48 hours'" }), "end at start").rejects.toThrow(/check/i);
+    await expect(publish({ country_code: "'US'" }), "unlisted country").rejects.toThrow(/check/i);
   });
 
   it("allows exactly one plan per activity through the unique index", async () => {
     const activityId = await withClient(appUrl, (client) =>
       client
         .query(
-          `INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-           VALUES ($1, 'Planned Kayaking', now() + interval '48 hours', 'UTC', 2000, 'GBP', 3)
+          `INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+           VALUES ($1, 'Planned Kayaking', now() + interval '48 hours', now() + interval '50 hours', 'UTC', 2000, 'GBP', 3)
            RETURNING id`,
           [hostId],
         )
@@ -109,8 +114,8 @@ describe("activities schema", () => {
     const activityId = await withClient(appUrl, (client) =>
       client
         .query(
-          `INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-           VALUES ($1, 'Bounded Kayaking', now() + interval '48 hours', 'UTC', 2000, 'USD', 2)
+          `INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+           VALUES ($1, 'Bounded Kayaking', now() + interval '48 hours', now() + interval '50 hours', 'UTC', 2000, 'USD', 2)
            RETURNING id`,
           [hostId],
         )

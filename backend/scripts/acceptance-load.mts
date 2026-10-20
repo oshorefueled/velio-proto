@@ -118,6 +118,7 @@ export async function runAcceptanceLoad(options: LoadOptions = {}): Promise<Load
     const published = await request("POST", "/activities", { description: "A guided activity.", itinerary: "Meet, explore, return.",
       title: `${LABEL_PREFIX} load activity`,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
       timezone: "UTC",
       priceMinorUnits: 1000,
       currency: "EUR",

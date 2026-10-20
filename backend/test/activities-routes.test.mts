@@ -79,6 +79,7 @@ async function publish(
     payload: { description: "A guided activity.", itinerary: "Meet, explore, return.",
       title: "Sunset Kayaking",
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
       timezone: "Europe/Berlin",
       priceMinorUnits: 4500,
       currency: "EUR",
@@ -105,6 +106,7 @@ describe("POST /activities", () => {
       payload: { description: "A guided activity.", itinerary: "Meet, explore, return.",
         title: "Boundary",
         startsAt: "2099-01-01T10:00:00Z",
+        endsAt: "2099-01-01T12:00:00Z",
         timezone: "UTC",
         priceMinorUnits: 100,
         currency: "USD",
@@ -124,6 +126,10 @@ describe("POST /activities", () => {
     ["startsAt", "2099-01-01T10:00:00"],
     ["startsAt", "2099-02-30T10:00:00Z"],
     ["startsAt", "2099-01-01"],
+    ["endsAt", "2099-01-01T10:00:00Z"],
+    ["endsAt", "2099-01-01T09:00:00Z"],
+    ["endsAt", "2099-01-01"],
+    ["country", "US"],
   ])("when %s is %s, returns a field error without publishing", async (field, value) => {
     const host = await establishHost("Validation Host");
     const before = await app.inject({ method: "GET", url: "/activities" }).then((r) => r.json().activities.length);
@@ -134,6 +140,7 @@ describe("POST /activities", () => {
       payload: { description: "A guided activity.", itinerary: "Meet, explore, return.",
         title: "Validation",
         startsAt: "2099-01-01T10:00:00Z",
+        endsAt: "2099-01-01T12:00:00Z",
         timezone: "UTC",
         priceMinorUnits: 100,
         currency: "USD",
@@ -201,6 +208,7 @@ describe("POST /activities", () => {
       payload: { description: "A guided activity.", itinerary: "Meet, explore, return.",
         title: "",
         startsAt: "not-a-date",
+        endsAt: "not-a-date",
         timezone: "Mars/Olympus",
         priceMinorUnits: -5,
         currency: "eur",
@@ -213,6 +221,7 @@ describe("POST /activities", () => {
     expect(body.error.code).toBe("validation_error");
     expect(Object.keys(body.error.fields).sort()).toEqual([
       "currency",
+      "endsAt",
       "priceMinorUnits",
       "spots",
       "startsAt",

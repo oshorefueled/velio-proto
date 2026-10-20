@@ -37,7 +37,7 @@ export function App(): ReactNode {
   }, [bookingStore]);
   const [page, setPage] = useState<Page>(() => {
     if (new URLSearchParams(location.search).has("activity") || !ready) return "explore";
-    return status.user.email === "host@demo.velio.test" ? "hosting" : status.user.email === "booker@demo.velio.test" ? "bookings" : "explore";
+    return status.user.email === "host@velio.test" ? "hosting" : status.user.email === "booker@velio.test" ? "bookings" : "explore";
   });
   const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(location.search).get("activity"));
   const [view, setView] = useState<"activity" | "invites">(() => new URLSearchParams(location.search).get("view") === "invites" ? "invites" : "activity");
