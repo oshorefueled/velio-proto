@@ -1,4 +1,3 @@
-import "@fontsource-variable/fraunces/index.css";
 import "@fontsource-variable/public-sans/index.css";
 import "./styles.css";
 import { StrictMode } from "react";
