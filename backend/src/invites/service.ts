@@ -1,12 +1,10 @@
 import { getActivity, getHostContext } from "../activities/service.js";
 import { randomBytes } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import type { Redis } from "ioredis";
 import { appendEvent } from "../events/append.js";
 import { ActivityNotFoundError, ForbiddenError, isActivityId } from "../activities/domain.js";
 import { ActivityStartedError } from "../booking/domain.js";
 import { ValidationError, normalizeEmail } from "../identity/domain.js";
-import { consumeFixedWindowQuota, type QuotaLimits } from "../ratelimit.js";
 import {
   CODE_ALPHABET,
   CODE_LENGTH,
@@ -19,15 +17,10 @@ import {
 
 export interface InvitesDeps {
   pool: Pool;
-  redis: Redis;
   /** Creation switch: gates creation only, never issued invites or claims. */
   inviteCreationEnabled: boolean;
   /** Legacy configuration accepted by callers; invitation expiry is activity start. */
   expiryHours: number;
-  /** Legacy caller configuration; creation does not consume a quota. */
-  creationQuota: QuotaLimits;
-  /** Finite resolution quota per IP. */
-  resolveQuota: Pick<QuotaLimits, "perIp" | "windowSeconds">;
 }
 
 export interface InviteView {
@@ -246,11 +239,6 @@ export async function createPublicShare(
  * never mutates anything.
  */
 export async function resolveInvite(deps: InvitesDeps, code: unknown, input: { ip: string }): Promise<InvitePreview> {
-  await consumeFixedWindowQuota(deps.redis, {
-    scope: "invite-resolve",
-    ip: input.ip,
-    limits: { perIdentity: deps.resolveQuota.perIp, perIp: deps.resolveQuota.perIp, windowSeconds: deps.resolveQuota.windowSeconds },
-  });
   const normalized = normalizeCode(code);
   if (normalized === null) {
     throw new InviteNotFoundError();

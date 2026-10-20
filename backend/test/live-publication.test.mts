@@ -50,8 +50,6 @@ function uniqueIp(): string {
 function bookingDeps(live?: BookingDeps["live"]): BookingDeps {
   return {
     pool,
-    redis,
-    quota: { perIdentity: 1000, perIp: 100000, windowSeconds: 3600 },
     lockTimeoutMs: 2000,
     statementTimeoutMs: 5000,
     live,
@@ -69,7 +67,7 @@ async function publishTreatment(title: string): Promise<string> {
     title,
     startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
     endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-    timezone: "UTC",
+    country: "GB",
     priceMinorUnits: 1000,
     currency: "EUR",
     spots: 5,

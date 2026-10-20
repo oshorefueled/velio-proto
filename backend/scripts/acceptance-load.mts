@@ -15,8 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
  * booking operations with at most 20 in flight against the real API,
  * PostgreSQL and Redis — no mocks. The benchmark runs in the isolated
  * velio_test database with operator-labeled synthetic (demo) data, so the
- * default real-cohort reports stay free of acceptance traffic. Benchmark
- * quota overrides are disclosed in the result JSON.
+ * default real-cohort reports stay free of acceptance traffic.
  *
  * This is a synthetic-hardware workload result, not a production capacity
  * claim and not the rendered 20-browser/Flutter SLO (ticket 21).
@@ -62,13 +61,8 @@ export async function runAcceptanceLoad(options: LoadOptions = {}): Promise<Load
   }
 
   const base = loadConfig();
-  // Benchmark-specific override, disclosed: the shared per-IP booking quota
-  // would reject a same-source synthetic burst long before 1,000 operations.
-  // Per-identity quotas stay at their configured values (one booking per
-  // identity here).
   const config: Config = {
     ...base,
-    bookingRateLimitPerIp: 1000000,
     // Disclosed benchmark override: a 20-deep queue on one activity row can
     // legitimately wait longer than the interactive 5s statement timeout;
     // leaving it would misclassify queued waits as server failures. The
@@ -119,7 +113,7 @@ export async function runAcceptanceLoad(options: LoadOptions = {}): Promise<Load
       title: `${LABEL_PREFIX} load activity`,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 1000,
       currency: "EUR",
       spots: operations,
@@ -128,9 +122,7 @@ export async function runAcceptanceLoad(options: LoadOptions = {}): Promise<Load
     const activityId = (published.json as { activity: { id: string } }).activity.id;
     await migrationPool.query("UPDATE activities SET dataset = 'demo' WHERE id = $1", [activityId]);
 
-    // Distinct identities: one booking operation each, so configured
-    // per-identity quotas stay meaningful while the shared per-IP window
-    // carries the synthetic burst.
+    // Distinct identities: one booking operation each.
     const identitySetupStarted = Date.now();
     const tokens: string[] = new Array(operations);
     let identityCursor = 0;
@@ -243,11 +235,7 @@ export async function runAcceptanceLoad(options: LoadOptions = {}): Promise<Load
         bookingLockTimeoutMs: runConfig.bookingLockTimeoutMs,
         bookingStatementTimeoutMs: runConfig.bookingStatementTimeoutMs,
         statementTimeoutOverrideDisclosure: "raised to 30000ms for the queued single-row burst; lock timeout unchanged at 2000ms",
-        bookingRateLimitPerIdentity: runConfig.bookingRateLimitPerIdentity,
-        bookingRateLimitPerIp: runConfig.bookingRateLimitPerIp,
-        bookingRateWindowSeconds: runConfig.bookingRateWindowSeconds,
         livePublishTimeoutMs: runConfig.livePublishTimeoutMs,
-        quotaOverrideDisclosure: "bookingRateLimitPerIp raised to 1000000 for the same-source synthetic burst; per-identity quota untouched (one operation per identity)",
         dataset: "demo (operator-labeled synthetic, excluded from default real reports)",
       },
       workload: { operations, inFlightMax, startedAt, finishedAt: new Date().toISOString(), durationMs: Date.now() - Date.parse(startedAt) },

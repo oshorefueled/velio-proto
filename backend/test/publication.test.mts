@@ -5,16 +5,9 @@ import { loadConfig } from "../src/config.ts";
 import { resetAndMigrate, urlFor, withClient } from "./support/db.mts";
 
 const migrationUrl = urlFor("MIGRATION_DATABASE_URL", "velio_test");
-// Quota override disclosure: the suite's booking workloads share one loopback
-// IP fixed window, so this app runs with booking quotas far above the
-// documented defaults — saved and sold-out outcomes must never be disguised as
-// 429s. The dedicated quota boundary lives in booking-routes.test.mts with a
-// tiny limit instead.
 const app = buildApp({
   ...loadConfig(process.env),
   databaseUrl: urlFor("DATABASE_URL", "velio_test"),
-  bookingRateLimitPerIdentity: 500,
-  bookingRateLimitPerIp: 10000,
   logLevel: "silent",
 });
 beforeAll(() => resetAndMigrate(migrationUrl));
@@ -29,7 +22,7 @@ it("when a host publishes complete information, signed-out visitors can inspect 
   expect(returned.json()).toMatchObject({ user: { id: user.id }, created: false });
   const published = await app.inject({ method: "POST", url: "/activities", headers: { authorization: `Bearer ${session.token}` }, payload: {
     title: "Lagoon at sunset", description: "A calm paddle with a local guide.", itinerary: "Meet at the jetty. Paddle the lagoon. Return for tea.",
-    startsAt: "2030-11-20T16:00:00Z", endsAt: "2030-11-20T18:00:00Z", timezone: "Africa/Lagos", priceMinorUnits: 1250000, currency: "NGN", spots: 6,
+    startsAt: "2030-11-20T16:00:00Z", endsAt: "2030-11-20T18:00:00Z", country: "NG", priceMinorUnits: 1250000, currency: "NGN", spots: 6,
   } });
   expect(published.statusCode).toBe(201);
   const saved = published.json();
@@ -45,7 +38,7 @@ it("when a returning booker lists saved bookings, only that account's activity a
   const booker = await account("booker-list@example.test");
   const outsider = await account("other-list@example.test");
   const published = (await app.inject({ method: "POST", url: "/activities", headers: { authorization: `Bearer ${host.session.token}` }, payload: {
-    title: "Saved outing", description: "A relaxed walk.", itinerary: "Meet and walk.", startsAt: "2030-11-20T16:00:00Z", endsAt: "2030-11-20T18:00:00Z", timezone: "Africa/Lagos", priceMinorUnits: 1000, currency: "NGN", spots: 5,
+    title: "Saved outing", description: "A relaxed walk.", itinerary: "Meet and walk.", startsAt: "2030-11-20T16:00:00Z", endsAt: "2030-11-20T18:00:00Z", country: "NG", priceMinorUnits: 1000, currency: "NGN", spots: 5,
   } })).json();
   const booked = await app.inject({ method: "POST", url: `/activities/${published.activity.id}/bookings`, headers: { authorization: `Bearer ${booker.session.token}` }, payload: { operationId: "saved-list-booking" } });
   expect(booked.statusCode).toBe(201);

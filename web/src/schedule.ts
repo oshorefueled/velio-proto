@@ -50,12 +50,3 @@ export function zoneOffsetMinutes(instant: Date, timeZone: string): number {
   const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
   return Math.round((asUtc - instant.getTime()) / 60_000);
 }
-
-export function isValidTimeZone(timeZone: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone });
-    return true;
-  } catch {
-    return false;
-  }
-}

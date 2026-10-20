@@ -2,7 +2,6 @@ import "../src/config.ts"; // loads the repo-root .env into process.env
 import { beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
-import { Redis } from "ioredis";
 import { createPool } from "../src/db/pool.ts";
 import type { UserSnapshot } from "../src/identity/domain.ts";
 import { establishIdentity } from "../src/identity/service.ts";
@@ -17,7 +16,6 @@ const migrationUrl = urlFor("MIGRATION_DATABASE_URL", "velio_test");
 const appUrl = urlFor("DATABASE_URL", "velio_test");
 
 let pool: Pool;
-let redis: Redis;
 let booking: BookingDeps;
 let activities: ActivitiesDeps;
 let invites: InvitesDeps;
@@ -27,28 +25,19 @@ beforeAll(async () => {
   await resetAndMigrate(migrationUrl);
   await clearIdentityData(migrationUrl);
   pool = createPool(appUrl);
-  redis = new Redis(process.env.REDIS_URL as string);
-  redis.on("error", () => {});
-  const quota = { perIdentity: 1000, perIp: 100000, windowSeconds: 3600 };
   booking = {
     pool,
-    redis,
-    quota,
     lockTimeoutMs: 2000,
     statementTimeoutMs: 5000,
   };
   activities = { pool, experiment: { allocationPercent: 100, experimentVersion: "t6-claim" } };
   invites = {
     pool,
-    redis,
     inviteCreationEnabled: true,
     expiryHours: 336,
-    creationQuota: quota,
-    resolveQuota: { perIp: quota.perIp, windowSeconds: quota.windowSeconds },
   };
   host = (await establishIdentity({ pool, sessionTtlHours: 12 }, { contactKey: uniqueKey("claim-host"), displayName: "Claim Host" })).user;
   return () => {
-    redis.quit();
     return pool.end();
   };
 });
@@ -68,7 +57,7 @@ async function publishTreatment(title: string, spots = 5): Promise<string> {
     title,
     startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
     endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-    timezone: "UTC",
+    country: "GB",
     priceMinorUnits: 1000,
     currency: "EUR",
     spots,

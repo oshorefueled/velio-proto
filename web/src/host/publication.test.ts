@@ -51,7 +51,7 @@ it("when a description runs past 500 characters, the counter shows its length an
     expect(requests).toEqual([expect.objectContaining({ description: long })]);
   } finally { await act(async () => root.unmount()); container.remove(); localStorage.clear(); }
 });
-it("when the end time is earlier on the clock, the activity ends the next day; an unspecified country is sent as null", async () => {
+it("when the end time is earlier on the clock, the activity ends the next day, read in the selected country's timezone", async () => {
   localStorage.setItem("velio.session.v1", JSON.stringify({ token: "host", user: { id: "host", email: "host@example.test", displayName: "Host" } }));
   const requests: Record<string, unknown>[] = [];
   const transport: Transport = async (_url, init) => { requests.push(JSON.parse(init.body!)); return { status: 201, json: { activity: { id: "published" } } }; };
@@ -65,14 +65,30 @@ it("when the end time is earlier on the clock, the activity ends the next day; a
       await act(async () => { Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(input, value); input.dispatchEvent(new Event(input instanceof HTMLSelectElement ? "change" : "input", { bubbles: true })); });
     }
     await fill("pub-title", "Late show"); await fill("pub-description", "A night out."); await fill("pub-itinerary", "Meet. Watch. Talk.");
-    await fill("pub-timezone", "Europe/London"); await fill("pub-date", "2030-11-20"); await fill("pub-time", "21:30"); await fill("pub-end-time", "01:00");
-    await fill("pub-country", "");
+    await fill("pub-date", "2030-11-20"); await fill("pub-time", "21:30"); await fill("pub-end-time", "01:00");
+    await fill("pub-country", "NG");
     expect(container.textContent).toContain("Ends the next day");
     await act(async () => container.querySelector("form")!.requestSubmit());
-    expect(requests).toEqual([expect.objectContaining({ startsAt: "2030-11-20T21:30:00.000Z", endsAt: "2030-11-21T01:00:00.000Z", country: null })]);
+    expect(requests).toEqual([expect.objectContaining({ startsAt: "2030-11-20T20:30:00.000Z", endsAt: "2030-11-21T00:00:00.000Z", country: "NG" })]);
+    expect(requests[0]).not.toHaveProperty("timezone");
     await fill("pub-end-time", "21:30");
     await act(async () => container.querySelector("form")!.requestSubmit());
     expect(requests).toHaveLength(1);
     expect(container.textContent).toContain("The end time must differ from the start time.");
+  } finally { await act(async () => root.unmount()); container.remove(); localStorage.clear(); }
+});
+it("shows a required Country field defaulting to the United Kingdom and no Timezone field", async () => {
+  localStorage.setItem("velio.session.v1", JSON.stringify({ token: "host", user: { id: "host", email: "host@example.test", displayName: "Host" } }));
+  const transport: Transport = async () => ({ status: 201, json: { activity: { id: "published" } } });
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(SessionProvider, { transport, children: createElement(PublishForm, { onPublished: () => {} }) })));
+    const country = container.querySelector<HTMLSelectElement>("#pub-country")!;
+    expect(country.value).toBe("GB");
+    expect(country.required).toBe(true);
+    expect([...country.options].map(option => option.value)).toEqual(["GB", "IE", "FR", "DE", "NL", "ES", "NG"]);
+    expect(container.querySelector("#pub-timezone")).toBeNull();
+    expect(container.textContent).not.toContain("Timezone");
   } finally { await act(async () => root.unmount()); container.remove(); localStorage.clear(); }
 });

@@ -195,6 +195,8 @@ void main() {
       await tester.tap(find.byKey(const Key('saved-booking-b1')));
       await tester.pumpAndSettle();
       expect(find.text('Meet at the bridge.'), findsOneWidget);
+      expect(find.textContaining('b1'), findsNothing);
+      expect(find.textContaining('saved record'), findsNothing);
       expect(find.textContaining('River Host'), findsOneWidget);
       expect(controller.code, isNull);
       await tester.tap(find.byKey(const Key('switch-identity')));
@@ -591,6 +593,208 @@ void main() {
         ),
         isEmpty,
       );
+    },
+  );
+
+  Future<List<String>> systemCalls(WidgetTester tester) async {
+    final calls = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        calls.add(call.method);
+        return null;
+      },
+    );
+    return calls;
+  }
+
+  Map<String, Object> signedIn() => {
+    'session': {'token': 'tok', 'expiresAt': '2027-01-01T00:00:00Z'},
+    'user': {'id': 'u1', 'email': 'guest@example.test', 'displayName': 'Guest'},
+    'created': false,
+  };
+
+  testWidgets(
+    'Cancel and Android back leave checkout for the invitation with nothing booked; Android back on the invitation goes home without closing the app',
+    (tester) async {
+      final calls = await systemCalls(tester);
+      final transport = FakeTransport();
+      transport.responses['GET /invites/CODEEEEE'] = transport.previewBody(
+        code: 'CODEEEEE',
+      );
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final controller = await mountedController(tester, transport: transport);
+      await controller.openCode('CODEEEEE');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('continue-checkout')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('cancel-checkout')));
+      await tester.pumpAndSettle();
+      expect(controller.checkout, isFalse);
+      expect(find.byKey(const Key('preview-card')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('continue-checkout')));
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(controller.checkout, isFalse);
+      expect(find.byKey(const Key('preview-card')), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('code-field')), findsOneWidget);
+      expect(calls, isNot(contains('SystemNavigator.pop')));
+      expect(
+        transport.requests.where(
+          (r) => r.method == 'POST' && r.path.endsWith('/bookings'),
+        ),
+        isEmpty,
+      );
+    },
+  );
+
+  testWidgets(
+    'a confirmation shows no booking ID, saved time or note, and Android back opens My bookings with the new booking listed',
+    (tester) async {
+      final calls = await systemCalls(tester);
+      final transport = FakeTransport();
+      transport.responses['GET /invites/CODEFFFF'] = transport.previewBody(
+        code: 'CODEFFFF',
+      );
+      transport.responses['POST /demo/sessions'] = signedIn();
+      transport.responses['GET /my/bookings'] = {'bookings': []};
+      transport.statusOverrides['GET /activities/a1/bookings/me'] = 404;
+      transport.responses['GET /activities/a1/bookings/me'] = transport
+          .errorBody('booking_not_found');
+      transport.responses['POST /activities/a1/bookings'] = transport
+          .claimBody();
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final controller = await mountedController(tester, transport: transport);
+      await controller.openCode('CODEFFFF');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('continue-checkout')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('contact-field')),
+        'guest@example.test',
+      );
+      await tester.tap(find.byKey(const Key('select-identity')));
+      await tester.pumpAndSettle();
+      transport.responses['GET /my/bookings'] = {
+        'bookings': [
+          {
+            'id': 'b1',
+            'activityId': 'a1',
+            'planId': 'p1',
+            'activity': {
+              'id': 'a1',
+              'title': 'Evening walk',
+              'startsAt': '2026-12-01T18:00:00Z',
+              'timezone': 'Europe/Stockholm',
+            },
+          },
+        ],
+      };
+      await tester.tap(find.byKey(const Key('claim')));
+      await tester.pumpAndSettle();
+      expect(find.text('You’re going!'), findsOneWidget);
+      expect(find.textContaining('b1'), findsNothing);
+      expect(find.textContaining('Saved'), findsNothing);
+      expect(find.textContaining('reopening shows it again'), findsNothing);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('My bookings'), findsOneWidget);
+      expect(find.byKey(const Key('saved-booking-b1')), findsOneWidget);
+      expect(calls, isNot(contains('SystemNavigator.pop')));
+    },
+  );
+
+  testWidgets(
+    'Close invite clears the preview and remembered code, returns home, and the next launch opens without it',
+    (tester) async {
+      final transport = FakeTransport();
+      transport.responses['GET /invites/CODEGGGG'] = transport.previewBody(
+        code: 'CODEGGGG',
+      );
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final store = DeviceStore.inMemory();
+      final controller = InviteController(
+        api: VelioApi(baseUrl: 'http://test', transport: transport.build()),
+        store: store,
+      );
+      await controller.bootstrap();
+      await tester.pumpWidget(
+        MaterialApp(home: InviteScreen(controller: controller)),
+      );
+      await controller.openCode('CODEGGGG');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('close-invite')));
+      await tester.pumpAndSettle();
+      expect(controller.preview, isNull);
+      expect(controller.code, isNull);
+      expect(find.byKey(const Key('code-field')), findsOneWidget);
+      expect(find.byKey(const Key('resume-invitation')), findsNothing);
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('code-field')))
+            .controller!
+            .text,
+        isEmpty,
+      );
+      final relaunched = InviteController(
+        api: VelioApi(baseUrl: 'http://test', transport: transport.build()),
+        store: store,
+      );
+      await relaunched.bootstrap();
+      expect(relaunched.code, isNull);
+      expect(relaunched.preview, isNull);
+    },
+  );
+
+  testWidgets(
+    'a personal invitation claimed by another account shows the wrong-recipient message with no retry',
+    (tester) async {
+      final transport = FakeTransport();
+      transport.responses['GET /invites/CODEHHHH'] = transport.previewBody(
+        code: 'CODEHHHH',
+      );
+      transport.responses['POST /demo/sessions'] = signedIn();
+      transport.responses['GET /my/bookings'] = {'bookings': []};
+      transport.statusOverrides['GET /activities/a1/bookings/me'] = 404;
+      transport.responses['GET /activities/a1/bookings/me'] = transport
+          .errorBody('booking_not_found');
+      transport.statusOverrides['POST /activities/a1/bookings'] = 403;
+      transport.responses['POST /activities/a1/bookings'] = transport.errorBody(
+        'invite_recipient_mismatch',
+      );
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final controller = await mountedController(tester, transport: transport);
+      await controller.openCode('CODEHHHH');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('continue-checkout')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('contact-field')),
+        'guest@example.test',
+      );
+      await tester.tap(find.byKey(const Key('select-identity')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('claim')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'This invitation was vouched for a different contact — switch to the account that was invited to claim it.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const Key('retry-claim')), findsNothing);
+      expect(find.text('Confirm booking again'), findsNothing);
     },
   );
 }

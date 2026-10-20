@@ -58,7 +58,6 @@ describe("acceptance runners", () => {
     expect(result.verification.bookings).toBe(30);
     expect(result.verification.storedBookedCount).toBe(30);
     expect(result.verification.attributionRows).toBe(30);
-    expect(result.settings.quotaOverrideDisclosure).toContain("bookingRateLimitPerIp");
     const bookings = (result.metrics as { reliability?: { successfulNewSpotAttempts?: number } }).reliability;
     expect(bookings?.successfulNewSpotAttempts).toBeGreaterThanOrEqual(30);
   }, 60000);

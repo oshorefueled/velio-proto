@@ -24,7 +24,6 @@ import {
 import { InviteExpiredError, InviteUsedError, InviteNotFoundError, InviteRecipientMismatchError } from "./invites/domain.js";
 import { EventConflictError } from "./clientevents/domain.js";
 import { AckRejectedError } from "./metrics/domain.js";
-import { RateLimitError } from "./ratelimit.js";
 
 /**
  * Shared transport concerns for the API's route plugins: bearer-token session
@@ -51,7 +50,6 @@ const STATUS: Record<string, number> = {
   activity_completed: 409,
   event_conflict: 409,
   ack_rejected: 400,
-  request_limit: 429,
   lock_timeout: 503,
   server_error: 500,
 };
@@ -127,9 +125,6 @@ export function domainErrorHandler(err: FastifyError, request: FastifyRequest, r
   }
   if (err instanceof AckRejectedError) {
     return sendError(reply, "ack_rejected", err.message);
-  }
-  if (err instanceof RateLimitError) {
-    return sendError(reply, "request_limit", err.message, undefined, err.retryAfterSeconds);
   }
   if (err instanceof LockTimeoutError) {
     return sendError(reply, "lock_timeout", err.message, undefined, 1);

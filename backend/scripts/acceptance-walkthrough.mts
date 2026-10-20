@@ -62,16 +62,12 @@ export async function runWalkthrough(options: { databaseUrl?: string; migrationU
   out: Record<string, unknown>;
 }> {
   const base = loadConfig();
-  // Disclosed acceptance overrides: repeated runs share the 127.0.0.1
-  // per-IP windows (quotas raised), and treatment allocation is pinned to
+  // Disclosed acceptance override: treatment allocation is pinned to
   // 100% so the invite-rail walkthrough is deterministic — control-arm
   // gating stays owned by the experiment/invite suites.
   const config: Config = {
     ...base,
     logLevel: "warn",
-    bookingRateLimitPerIp: 1000000,
-    inviteRateLimitPerIp: 1000000,
-    inviteResolveRateLimitPerIp: 1000000,
     experimentTreatmentAllocationPercent: 100,
   };
   const appUrl = options.databaseUrl ?? (() => {
@@ -156,7 +152,7 @@ export async function runWalkthrough(options: { databaseUrl?: string; migrationU
       title: `${runId} treatment`,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 1500,
       currency: "EUR",
       spots: 3,
@@ -166,7 +162,7 @@ export async function runWalkthrough(options: { databaseUrl?: string; migrationU
       title: `${runId} one-seat`,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 500,
       currency: "EUR",
       spots: 1,
@@ -176,7 +172,7 @@ export async function runWalkthrough(options: { databaseUrl?: string; migrationU
       title: `${runId} live one-seat`,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 500,
       currency: "EUR",
       spots: 1,
@@ -296,7 +292,7 @@ export async function runWalkthrough(options: { databaseUrl?: string; migrationU
       title: `${runId} completion demo`,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 900,
       currency: "EUR",
       spots: 1,
@@ -394,10 +390,7 @@ export async function runWalkthrough(options: { databaseUrl?: string; migrationU
   return { steps, out: { runId, settings: { node: process.version, database: "velio_test", databasePoolMax: config.databasePoolMax,
     databaseStatementTimeoutMs: config.databaseStatementTimeoutMs, databaseConnectTimeoutMs: config.databaseConnectTimeoutMs,
     bookingLockTimeoutMs: config.bookingLockTimeoutMs, bookingStatementTimeoutMs: config.bookingStatementTimeoutMs,
-    bookingRateLimitPerIdentity: config.bookingRateLimitPerIdentity, bookingRateLimitPerIp: config.bookingRateLimitPerIp,
-    bookingRateWindowSeconds: config.bookingRateWindowSeconds, inviteRateLimitPerIdentity: config.inviteRateLimitPerIdentity,
-    inviteRateLimitPerIp: config.inviteRateLimitPerIp, inviteResolveRateLimitPerIp: config.inviteResolveRateLimitPerIp,
-    inviteRateWindowSeconds: config.inviteRateWindowSeconds, livePublishTimeoutMs: config.livePublishTimeoutMs,
+    livePublishTimeoutMs: config.livePublishTimeoutMs,
     demoSessionTtlHours: config.demoSessionTtlHours, experimentVersion: config.experimentVersion,
     experimentTreatmentAllocationPercent: 100, experimentInviteCreationEnabled: config.experimentInviteCreationEnabled,
     simulatedClientObservation: true }, steps: steps.length, failed: failed.length, ok: failed.length === 0 } };

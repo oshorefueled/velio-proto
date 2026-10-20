@@ -4,10 +4,10 @@ This is a rehearsal order for presenting the prototype. Setup is in the [README]
 
 ## Order
 
-1. **Host publishes** on web. Choose **Host** and select **Publish activity**. Enter a title, description, itinerary, a start and end time and timezone, an optional country, spots, and a price in a normal currency. The new activity opens with **0 booked · N remaining** and an empty participant list.
-2. **Booker books and invites** on web, in a second browser window. Choose **Booker**, open the activity and select **Book a spot**. Review the checkout and select **Confirm one spot**. Then open **Invite someone to this plan**:
-   - **Copy public link** creates the reusable link;
-   - **Invite someone** with an email creates a personal invitation for that address.
+1. **Host publishes** on web. Choose **Host** and select **Publish activity**. Enter a title, description, itinerary, a start and end time, a country (which sets the timezone), spots, and a price in a normal currency. The new activity opens with **0 booked · N remaining** and an empty participant list.
+2. **Booker books and invites** on web, in a second browser window. Choose **Booker**, open the activity and select **Book a spot**. Review the checkout and select **Confirm one spot**. Then use the invite card below the activity details:
+   - **Or generate a public invite** creates the reusable link and shows it with **Copy**;
+   - **Invite** with an email creates a personal invitation for that address.
 
    The host window updates its count and participants (name + masked email) without a refresh.
 3. **Guest previews and claims** on the phone. Run `xcrun simctl openurl booted "velio://invite/<CODE>"` and confirm "Open in Velio". iOS asks for this the first time. The guest sees the activity, itinerary, host, inviter, date, price and availability before any account entry. Select **Continue to checkout**, enter a new email and confirm. One success haptic plays on a physical device; the simulator has no haptics.

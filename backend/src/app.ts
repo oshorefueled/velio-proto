@@ -44,12 +44,6 @@ export function buildApp(config: Config): FastifyInstance {
   app.register(registerBookingRoutes, {
     booking: {
       pool: deps.pool,
-      redis: deps.redis,
-      quota: {
-        perIdentity: config.bookingRateLimitPerIdentity,
-        perIp: config.bookingRateLimitPerIp,
-        windowSeconds: config.bookingRateWindowSeconds,
-      },
       lockTimeoutMs: config.bookingLockTimeoutMs,
       statementTimeoutMs: config.bookingStatementTimeoutMs,
       live,
@@ -69,32 +63,16 @@ export function buildApp(config: Config): FastifyInstance {
   app.register(registerInvitesRoutes, {
     invites: {
       pool: deps.pool,
-      redis: deps.redis,
       inviteCreationEnabled: config.experimentInviteCreationEnabled,
       expiryHours: config.inviteExpiryHours,
-      creationQuota: {
-        perIdentity: config.inviteRateLimitPerIdentity,
-        perIp: config.inviteRateLimitPerIp,
-        windowSeconds: config.inviteRateWindowSeconds,
-      },
-      resolveQuota: {
-        perIp: config.inviteResolveRateLimitPerIp,
-        windowSeconds: config.inviteRateWindowSeconds,
-      },
     },
     identity: { pool: deps.pool, sessionTtlHours: config.demoSessionTtlHours },
   });
-  // Client observation events: a public route with bounded abuse control;
-  // observations land in the append-only event log and the first visitor
+  // Client observation events: a public route; observations land in the append-only event log and the first visitor
   // link wins (PLANS.md 4.1).
   app.register(registerClientEventsRoutes, {
     events: {
       pool: deps.pool,
-      redis: deps.redis,
-      quota: {
-        perIp: config.clientEventRateLimitPerIp,
-        windowSeconds: config.clientEventRateWindowSeconds,
-      },
     },
     identity: { pool: deps.pool, sessionTtlHours: config.demoSessionTtlHours },
   });
@@ -104,11 +82,6 @@ export function buildApp(config: Config): FastifyInstance {
   app.register(registerMetricsRoutes, {
     metrics: {
       pool: deps.pool,
-      redis: deps.redis,
-      ackQuota: {
-        perIp: config.availabilityAckRateLimitPerIp,
-        windowSeconds: config.availabilityAckRateWindowSeconds,
-      },
     },
     publication: live.stats,
   });

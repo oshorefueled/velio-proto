@@ -343,7 +343,7 @@ export function createBookingStore(
             phase: {
               kind: "refused",
               reason: "invite-mismatch",
-              message: "This invitation was vouched for a different contact — switch to that contact to claim it.",
+              message: "This invitation was vouched for a different contact — switch to the account that was invited to claim it.",
             },
           });
           return;

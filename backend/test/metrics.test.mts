@@ -26,24 +26,13 @@ function configWith(overrides: Partial<Config> = {}): Config {
     databaseStatementTimeoutMs: 5000,
     bookingLockTimeoutMs: 2000,
     bookingStatementTimeoutMs: 5000,
-    bookingRateLimitPerIdentity: 30,
-    bookingRateLimitPerIp: 100000,
-    bookingRateWindowSeconds: 3600,
     demoSessionTtlHours: 12,
     logLevel: "silent",
     experimentVersion: "test-rollout",
     experimentTreatmentAllocationPercent: 100,
     experimentInviteCreationEnabled: true,
     inviteExpiryHours: 336,
-    inviteRateLimitPerIdentity: 10,
-    inviteRateLimitPerIp: 60,
-    inviteResolveRateLimitPerIp: 120,
-    inviteRateWindowSeconds: 3600,
-    clientEventRateLimitPerIp: 240,
-    clientEventRateWindowSeconds: 3600,
     liveLeaseSeconds: 30,
-    availabilityAckRateLimitPerIp: 240,
-    availabilityAckRateWindowSeconds: 3600,
     livePublishTimeoutMs: 500,
     liveChannelPrefix: "test-live",
     ...overrides,
@@ -56,11 +45,6 @@ let baseUrl = "";
 beforeAll(async () => {
   await resetAndMigrate(migrationUrl);
   await clearIdentityData(migrationUrl);
-  const quotaCleaner = new Redis(process.env.REDIS_URL as string);
-  try {
-    const keys = await quotaCleaner.keys("rl:measurement-register:ip:127.0.0.1:*");
-    if (keys.length) await quotaCleaner.del(...keys);
-  } finally { quotaCleaner.disconnect(); }
   app = buildApp(configWith({}));
   await app.listen({ port: 0, host: "127.0.0.1" });
   baseUrl = `ws://127.0.0.1:${(app.server.address() as { port: number }).port}`;
@@ -71,7 +55,7 @@ type App = Awaited<ReturnType<typeof buildApp>>;
 
 let callCounter = 0;
 
-/** Fresh source IP per request: persisted quota windows must not leak across runs. */
+/** Fresh source IP per request. */
 function nextInject(target: App, options: InjectOptions): Promise<LightInjectResponse> {
   callCounter += 1;
   return target.inject({
@@ -100,7 +84,7 @@ async function publishActivity(token: string, title: string, spots = 5): Promise
       title,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 2500,
       currency: "EUR",
       spots,
@@ -274,29 +258,8 @@ describe("booking health classification (issue #11 AC1)", () => {
       await holder.end();
     }
 
-    // Quota rejection: a real attempt, counted and shown separately.
-    const quotaApp = buildApp(configWith({ bookingRateLimitPerIdentity: 1 }));
-    try {
-      const bookerD = await establish("Health Booker D");
-      const first = await quotaApp.inject({
-        method: "POST",
-        url: `/activities/${activityId}/bookings`,
-        remoteAddress: "10.9.9.10",
-        headers: { authorization: `Bearer ${bookerD.token}` },
-        payload: { operationId: randomUUID() },
-      });
-      expect(first.statusCode).toBe(201);
-      const second = await quotaApp.inject({
-        method: "POST",
-        url: `/activities/${activityId}/bookings`,
-        remoteAddress: "10.9.9.10",
-        headers: { authorization: `Bearer ${bookerD.token}` },
-        payload: { operationId: randomUUID() },
-      });
-      expect(second.statusCode).toBe(429);
-    } finally {
-      await quotaApp.close();
-    }
+    const bookerD = await establish("Health Booker D");
+    expect((await book(bookerD.token, activityId)).statusCode).toBe(201);
 
     const second = await book(bookerB.token, activityId);
     expect(second.statusCode).toBe(201);
@@ -335,26 +298,24 @@ describe("booking health classification (issue #11 AC1)", () => {
     const metrics = await nextInject(app, { method: "GET", url: "/metrics" });
     expect(metrics.statusCode).toBe(200);
     const health = metrics.json().bookings;
-    // created A + created B + created D-first, replay shares the op id.
+    // created A + created B + created D, replay shares the op id.
     expect(health.outcomes.created).toBe(3);
     expect(health.outcomes.existing).toBe(1);
     expect(health.outcomes.sold_out).toBe(1);
     expect(health.outcomes.not_found).toBe(1);
     expect(health.outcomes.failed).toBe(1);
-    expect(health.outcomes.rate_limited).toBe(1);
     expect(health.outcomes.lock_timeout).toBe(1);
-    expect(health.rawAttempts).toBe(9);
-    expect(health.logicalOperations).toBe(8);
+    expect(health.rawAttempts).toBe(8);
+    expect(health.logicalOperations).toBe(7);
     expect(health.rawAttempts).toBeGreaterThan(health.logicalOperations);
     // Eligible = created + lock_timeout + failed; replays, sell-outs,
-    // invalid input and quota are excluded and shown separately.
+    // and invalid input are excluded and shown separately.
     expect(health.reliability.eligibleAttempts).toBe(5);
     expect(health.reliability.successfulNewSpotAttempts).toBe(3);
     expect(health.reliability.ratio).toBeCloseTo(0.6);
     expect(health.reliability.excludedSeparately.confirmedResultReplays).toBe(1);
     expect(health.reliability.excludedSeparately.expectedSellOuts).toBe(1);
     expect(health.reliability.excludedSeparately.invalidOrUnauthorized).toBe(1);
-    expect(health.reliability.excludedSeparately.quotaRejections).toBe(1);
   });
 
   it("exposes stored-count mismatches instead of hiding them and never reports oversell", async () => {
@@ -684,49 +645,6 @@ describe("applied availability measurement (issue #11 AC2/AC3)", () => {
     expect(other!.acked_at).toBeNull();
     returned.socket.close();
     unrelated.socket.close();
-  });
-
-  it("keeps the ack quota bounded per IP", async () => {
-    await resetMeasurements();
-    const host = await establish("AckQuota Host");
-    const activityId = await publishActivity(host.token, "AckQuota Activity", 5);
-    const viewer = await registerViewer(activityId, true);
-    const runIp = `10.${Math.floor(Date.now() / 1000) % 250}.${process.pid % 250}.77`;
-    const cleaner = new Redis(process.env.REDIS_URL as string);
-    for (const key of await cleaner.keys(`rl:availability-ack:ip:${runIp}:*`)) {
-      await cleaner.del(key);
-    }
-    const boundedApp = buildApp(configWith({ availabilityAckRateLimitPerIp: 1 }));
-    try {
-      // The quota consumes before validation, so unknown connections count
-      // toward it — abuse cannot probe for free.
-      for (let i = 0; i < 2; i += 1) {
-        await boundedApp.inject({
-          method: "POST",
-          url: "/availability-acks",
-          remoteAddress: runIp,
-          payload: ackPayload(
-            { connectionId: randomUUID(), activityId } as RegisteredViewer,
-            { appliedVersion: "1" },
-          ),
-        });
-      }
-      const limited = await boundedApp.inject({
-        method: "POST",
-        url: "/availability-acks",
-        remoteAddress: runIp,
-        payload: ackPayload(
-          { connectionId: randomUUID(), activityId } as RegisteredViewer,
-          { appliedVersion: "1" },
-        ),
-      });
-      expect(limited.statusCode).toBe(429);
-      expect(limited.json().error.code).toBe("request_limit");
-    } finally {
-      await boundedApp.close();
-      cleaner.disconnect();
-      viewer.socket.close();
-    }
   });
 });
 

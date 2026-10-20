@@ -1,7 +1,6 @@
 import "../src/config.ts"; // loads the repo-root .env into process.env
 import { beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { Redis } from "ioredis";
 import { buildApp } from "../src/app.ts";
 import type { Config } from "../src/config.ts";
 import { clearIdentityData, resetAndMigrate, urlFor, withClient } from "./support/db.mts";
@@ -22,24 +21,13 @@ function configWith(overrides: Partial<Config> = {}): Config {
     databaseStatementTimeoutMs: 5000,
     bookingLockTimeoutMs: 2000,
     bookingStatementTimeoutMs: 5000,
-    bookingRateLimitPerIdentity: 30,
-    bookingRateLimitPerIp: 10000,
-    bookingRateWindowSeconds: 3600,
     demoSessionTtlHours: 12,
     logLevel: "silent",
     experimentVersion: "test-rollout",
     experimentTreatmentAllocationPercent: 100,
     experimentInviteCreationEnabled: true,
     inviteExpiryHours: 336,
-    inviteRateLimitPerIdentity: 10,
-    inviteRateLimitPerIp: 60,
-    inviteResolveRateLimitPerIp: 120,
-    inviteRateWindowSeconds: 3600,
-    clientEventRateLimitPerIp: 240,
-    clientEventRateWindowSeconds: 3600,
     liveLeaseSeconds: 30,
-    availabilityAckRateLimitPerIp: 240,
-    availabilityAckRateWindowSeconds: 3600,
     livePublishTimeoutMs: 500,
     liveChannelPrefix: "test-live",
     ...overrides,
@@ -63,7 +51,7 @@ function uniqueKey(prefix: string): string {
 
 let callCounter = 0;
 
-/** Fresh source IP per request: run-persistent Redis windows must not leak across runs. */
+/** Fresh source IP per request. */
 function nextInject(app: App, options: InjectOptions): Promise<LightInjectResponse> {
   callCounter += 1;
   return app.inject({
@@ -95,7 +83,7 @@ async function publishActivity(app: App, token: string, title: string): Promise<
       title,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 2500,
       currency: "EUR",
       spots: 5,
@@ -494,50 +482,6 @@ describe("POST /client-events — session and route boundaries", () => {
 
     const opens = await eventsWhere("event_name = 'invite_opened' AND details->>'rail' IS NOT NULL AND activity_id = $1", [activityId]);
     expect(opens).toHaveLength(0);
-  });
-
-  it("keeps the observation quota bounded per IP", async () => {
-    const host = await establish(app, "Quota Host");
-    const activityId = await publishActivity(app, host.token, "Quota Activity");
-    // One stable source IP per run: persisted Redis windows must not leak
-    // across runs into this boundary sequence.
-    const runIp = `10.${Math.floor(Date.now() / 1000) % 250}.${process.pid % 250}.201`;
-    // Purge any window left for this IP by an earlier run, then wait for the
-    // bounded app's Redis to be reachable (readyz), so the whole boundary
-    // sequence is counted by the same Redis window instead of the startup
-    // fallback counter.
-    const cleaner = new Redis(process.env.REDIS_URL as string);
-    for (const key of await cleaner.keys(`rl:client-event:ip:${runIp}:*`)) {
-      await cleaner.del(key);
-    }
-    const boundedApp = buildApp(configWith({ clientEventRateLimitPerIp: 2 }));
-    try {
-      for (let i = 0; i < 50; i += 1) {
-        const ready = await boundedApp.inject({ method: "GET", url: "/readyz" });
-        if (ready.statusCode === 200) break;
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-      for (let i = 0; i < 2; i += 1) {
-        const accepted = await boundedApp.inject({
-          method: "POST",
-          url: "/client-events",
-          remoteAddress: runIp,
-          payload: observation({ activityId }),
-        });
-        expect(accepted.statusCode).toBe(200);
-      }
-      const limited = await boundedApp.inject({
-        method: "POST",
-        url: "/client-events",
-        remoteAddress: runIp,
-        payload: observation({ activityId }),
-      });
-      expect(limited.statusCode).toBe(429);
-      expect(limited.json().error.code).toBe("request_limit");
-    } finally {
-      await boundedApp.close();
-      cleaner.disconnect();
-    }
   });
 
   it("keeps visitor links append-only for the application role", async () => {

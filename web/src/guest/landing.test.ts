@@ -248,7 +248,7 @@ it("when a code is unknown, the explanation keeps the code path; a failing previ
   expect(document.body.textContent).toContain("Evening walk");
 });
 
-it("when a claim is created through identity selection, the invitation travels to the session and booking and the receipt shows the invited source", async () => {
+it("when a claim is created through identity selection, the invitation travels to the session and booking and the confirmation offers View my booking", async () => {
   const events: string[] = [];
   const bookingPosts: string[] = [];
   const sessionBodies: string[] = [];
@@ -266,8 +266,27 @@ it("when a claim is created through identity selection, the invitation travels t
   expect(claimEvents).toContain("claim_started");
   const body = document.body.textContent ?? "";
   expect(body).toContain("Your spot is saved");
-  expect(body).toContain("booking-guest");
+  expect(body).not.toContain("booking-guest");
+  expect(body).not.toContain("Saved");
+  expect(body).not.toContain("saved record");
   expect(body).not.toContain("generation 2");
+  const actions = [...document.querySelectorAll(".invite-actions button")].map((button) => button.textContent);
+  expect(actions).toEqual(["View my booking", "Browse activities"]);
+});
+
+it("when a claim is confirmed, View my booking opens the booked activity from My bookings", async () => {
+  const base = landingTransport({});
+  await mount(async (url, init) => {
+    if (url.endsWith("/activities/a")) return ok({ activity: { id: "a", hostId: "host", title: "Evening walk", description: "A walk.", startsAt: "2030-11-20T18:00:00Z", endsAt: "2030-11-20T20:00:00Z", timezone: "Europe/London", country: "GB", priceMinorUnits: 1000, currency: "GBP", capacity: 4, bookedCount: 1, remainingSpots: 3, availabilityVersion: "1", hostDisplayName: "Host", started: false }, invites: {} });
+    return base(url, init);
+  }, { session: guestUser });
+  await click("Claim your spot");
+  await settle();
+  await click("View my booking");
+  await settle();
+  expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Evening walk");
+  expect(document.body.textContent).toContain("Back to My bookings");
+  expect(new URLSearchParams(location.search).get("invite")).toBeNull();
 });
 
 it("when a pending claim is in flight, submit stays disabled and a second click sends no second request", async () => {
@@ -325,7 +344,6 @@ it("when the invite has expired but the visitor already holds the booking, the s
   const body = document.body.textContent ?? "";
   expect(body).toContain("Booking is closed because this invitation has expired.");
   expect(body).toContain("Your spot is saved");
-  expect(body).toContain("booking-guest");
   const opened = events.map((e) => JSON.parse(e));
   expect(opened).toHaveLength(1);
   expect(opened[0]!.outcome).toBe("expired");
@@ -477,7 +495,7 @@ it("when a claim hits a vouch meant for another contact, the reason explains wit
   await click("Claim your spot");
   await settle();
   const body = document.body.textContent ?? "";
-  expect(body).toContain("vouched for a different contact");
+  expect(body).toContain("This invitation was vouched for a different contact — switch to the account that was invited to claim it.");
   expect(body).toContain("Sign out");
   expect(document.body.innerHTML).not.toContain("secret-contact");
 });

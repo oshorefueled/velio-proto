@@ -30,10 +30,6 @@ describe("loadConfig", () => {
     expect(config.experimentTreatmentAllocationPercent).toBe(10);
     expect(config.experimentInviteCreationEnabled).toBe(true);
     expect(config.inviteExpiryHours).toBe(336);
-    expect(config.inviteRateLimitPerIdentity).toBe(10);
-    expect(config.inviteRateLimitPerIp).toBe(60);
-    expect(config.inviteResolveRateLimitPerIp).toBe(120);
-    expect(config.inviteRateWindowSeconds).toBe(3600);
     expect(config.logLevel).toBe("info");
   });
 
@@ -54,15 +50,10 @@ describe("loadConfig", () => {
     );
   });
 
-  it("rejects malformed invite quotas and expiry", () => {
+  it("rejects a malformed invite expiry", () => {
     for (const [key, value] of [
       ["INVITE_EXPIRY_HOURS", "0"],
       ["INVITE_EXPIRY_HOURS", "14.5"],
-      ["INVITE_RATE_LIMIT_PER_IDENTITY", "0"],
-      ["INVITE_RATE_LIMIT_PER_IDENTITY", "ten"],
-      ["INVITE_RATE_LIMIT_PER_IP", "-1"],
-      ["INVITE_RESOLVE_RATE_LIMIT_PER_IP", "0"],
-      ["INVITE_RATE_WINDOW_SECONDS", "0"],
     ] as const) {
       expect(() => loadConfig({ ...baseEnv, [key]: value })).toThrow(new RegExp(key));
     }

@@ -28,12 +28,6 @@ export interface Config {
   bookingLockTimeoutMs: number;
   /** Booking transaction statement timeout (SET LOCAL), PLANS 5.2. */
   bookingStatementTimeoutMs: number;
-  /** Finite booking quota per identity within the window, PLANS 5.2. */
-  bookingRateLimitPerIdentity: number;
-  /** Finite booking quota per IP within the window, PLANS 5.2. */
-  bookingRateLimitPerIp: number;
-  /** Fixed quota window length in seconds. */
-  bookingRateWindowSeconds: number;
   /** Demo session lifetime in hours; finite and documented (PLANS.md 5.2). */
   demoSessionTtlHours: number;
   /** Version saved with each experiment assignment (PLANS.md 3.6); a new
@@ -45,18 +39,6 @@ export interface Config {
   experimentInviteCreationEnabled: boolean;
   /** Configured invite lifetime in hours; expiry never passes the activity start. */
   inviteExpiryHours: number;
-  /** Finite invite-creation quota per identity within the window, PLANS 5.2. */
-  inviteRateLimitPerIdentity: number;
-  /** Finite invite-creation quota per IP within the window, PLANS 5.2. */
-  inviteRateLimitPerIp: number;
-  /** Finite invite-code resolution quota per IP within the window, PLANS 5.2. */
-  inviteResolveRateLimitPerIp: number;
-  /** Fixed invite quota window length in seconds. */
-  inviteRateWindowSeconds: number;
-  /** Finite client-event observation quota per IP within the window, PLANS 5.2. */
-  clientEventRateLimitPerIp: number;
-  /** Fixed client-event quota window length in seconds. */
-  clientEventRateWindowSeconds: number;
   /** Finite publication budget for one Redis availability publish (PLANS 3.4). */
   livePublishTimeoutMs: number;
   /** Environment prefix for live channels, keeping stages off each other. */
@@ -65,10 +47,6 @@ export interface Config {
   liveLeaseSeconds: number;
   /** Owning instance label for live presence; defaults to a per-boot UUID. */
   liveInstanceId?: string;
-  /** Finite availability-ack quota per IP within the window, PLANS 5.2. */
-  availabilityAckRateLimitPerIp: number;
-  /** Fixed availability-ack quota window length in seconds. */
-  availabilityAckRateWindowSeconds: number;
   logLevel: string;
 }
 
@@ -81,7 +59,7 @@ export class MissingConfigError extends Error {
 
 function positiveInt(value: string, name: string): number {
   // Strict decimal digits: parseInt would silently accept "14.5" as 14 or
-  // "1e2" as 100, and a misread budget or quota is worse than a refused one.
+  // "1e2" as 100, and a misread budget is worse than a refused one.
   if (!/^\d+$/.test(value)) {
     throw new Error(`${name} must be a positive integer, got: ${value}`);
   }
@@ -144,12 +122,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       env.BOOKING_STATEMENT_TIMEOUT_MS ?? "5000",
       "BOOKING_STATEMENT_TIMEOUT_MS",
     ),
-    bookingRateLimitPerIdentity: positiveInt(
-      env.BOOKING_RATE_LIMIT_PER_IDENTITY ?? "30",
-      "BOOKING_RATE_LIMIT_PER_IDENTITY",
-    ),
-    bookingRateLimitPerIp: positiveInt(env.BOOKING_RATE_LIMIT_PER_IP ?? "120", "BOOKING_RATE_LIMIT_PER_IP"),
-    bookingRateWindowSeconds: positiveInt(env.BOOKING_RATE_WINDOW_SECONDS ?? "3600", "BOOKING_RATE_WINDOW_SECONDS"),
     demoSessionTtlHours: positiveInt(env.DEMO_SESSION_TTL_HOURS ?? "12", "DEMO_SESSION_TTL_HOURS"),
     experimentVersion: experimentVersion(env.EXPERIMENT_VERSION ?? "rollout-1"),
     experimentTreatmentAllocationPercent: percent(
@@ -161,36 +133,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       "EXPERIMENT_INVITE_CREATION_ENABLED",
     ),
     inviteExpiryHours: positiveInt(env.INVITE_EXPIRY_HOURS ?? "336", "INVITE_EXPIRY_HOURS"),
-    inviteRateLimitPerIdentity: positiveInt(
-      env.INVITE_RATE_LIMIT_PER_IDENTITY ?? "10",
-      "INVITE_RATE_LIMIT_PER_IDENTITY",
-    ),
-    inviteRateLimitPerIp: positiveInt(env.INVITE_RATE_LIMIT_PER_IP ?? "60", "INVITE_RATE_LIMIT_PER_IP"),
-    inviteResolveRateLimitPerIp: positiveInt(
-      env.INVITE_RESOLVE_RATE_LIMIT_PER_IP ?? "120",
-      "INVITE_RESOLVE_RATE_LIMIT_PER_IP",
-    ),
-    inviteRateWindowSeconds: positiveInt(env.INVITE_RATE_WINDOW_SECONDS ?? "3600", "INVITE_RATE_WINDOW_SECONDS"),
-    clientEventRateLimitPerIp: positiveInt(
-      env.CLIENT_EVENT_RATE_LIMIT_PER_IP ?? "240",
-      "CLIENT_EVENT_RATE_LIMIT_PER_IP",
-    ),
-    clientEventRateWindowSeconds: positiveInt(
-      env.CLIENT_EVENT_RATE_WINDOW_SECONDS ?? "3600",
-      "CLIENT_EVENT_RATE_WINDOW_SECONDS",
-    ),
     livePublishTimeoutMs: positiveInt(env.LIVE_PUBLISH_TIMEOUT_MS ?? "500", "LIVE_PUBLISH_TIMEOUT_MS"),
     liveChannelPrefix: nonEmpty(env.LIVE_CHANNEL_PREFIX ?? "velio-local", "LIVE_CHANNEL_PREFIX"),
     liveLeaseSeconds: positiveInt(env.LIVE_LEASE_SECONDS ?? "30", "LIVE_LEASE_SECONDS"),
     liveInstanceId: env.LIVE_INSTANCE_ID === undefined ? undefined : nonEmpty(env.LIVE_INSTANCE_ID, "LIVE_INSTANCE_ID"),
-    availabilityAckRateLimitPerIp: positiveInt(
-      env.AVAILABILITY_ACK_RATE_LIMIT_PER_IP ?? "240",
-      "AVAILABILITY_ACK_RATE_LIMIT_PER_IP",
-    ),
-    availabilityAckRateWindowSeconds: positiveInt(
-      env.AVAILABILITY_ACK_RATE_WINDOW_SECONDS ?? "3600",
-      "AVAILABILITY_ACK_RATE_WINDOW_SECONDS",
-    ),
     logLevel: env.LOG_LEVEL ?? "info",
   };
 }

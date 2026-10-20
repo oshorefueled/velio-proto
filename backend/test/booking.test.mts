@@ -4,7 +4,6 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import type { Pool } from "pg";
 import { createPool } from "../src/db/pool.ts";
-import { Redis } from "ioredis";
 import type { UserSnapshot } from "../src/identity/domain.ts";
 import { establishIdentity } from "../src/identity/service.ts";
 import {
@@ -32,18 +31,12 @@ beforeAll(async () => {
   await resetAndMigrate(migrationUrl);
   await clearIdentityData(migrationUrl);
   pool = createPool(appUrl, { max: 10 });
-  const redis = new Redis(process.env.REDIS_URL as string);
-  redis.on("error", () => {});
-  // Generous test quotas; the dedicated quota boundary test overrides downward.
   deps = {
     pool,
-    redis,
-    quota: { perIdentity: 1000, perIp: 100000, windowSeconds: 3600 },
     lockTimeoutMs: 2000,
     statementTimeoutMs: 5000,
   };
   return () => {
-    redis.quit();
     return pool.end();
   };
 });

@@ -1,9 +1,17 @@
 export const TITLE_MAX_LENGTH = 200;
-export const TIMEZONE_MAX_LENGTH = 64;
 const MAX_SPOTS = 2147483647;
 const CURRENCIES = new Set<string>(Intl.supportedValuesOf("currency"));
-export const COUNTRIES = ["GB", "IE", "FR", "DE", "NL", "ES", "NG"] as const;
-export type Country = (typeof COUNTRIES)[number];
+const COUNTRY_TIMEZONES = {
+  GB: "Europe/London",
+  IE: "Europe/Dublin",
+  FR: "Europe/Paris",
+  DE: "Europe/Berlin",
+  NL: "Europe/Amsterdam",
+  ES: "Europe/Madrid",
+  NG: "Africa/Lagos",
+} as const;
+export type Country = keyof typeof COUNTRY_TIMEZONES;
+export const COUNTRIES = Object.keys(COUNTRY_TIMEZONES) as Country[];
 
 export interface ActivityInput {
   itinerary: string;
@@ -12,7 +20,7 @@ export interface ActivityInput {
   startsAt: Date;
   endsAt: Date;
   timezone: string;
-  country: Country | null;
+  country: Country;
   priceMinorUnits: number;
   currency: string;
   spots: number;
@@ -64,15 +72,6 @@ function isPresentString(raw: unknown): raw is string {
   return typeof raw === "string";
 }
 
-export function isValidTimeZone(timezone: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** Validate every publication field, reporting all offending fields at once. */
 export function validateActivityInput(raw: Record<string, unknown>): ActivityInput {
   const fields: Record<string, string> = {};
@@ -98,24 +97,8 @@ export function validateActivityInput(raw: Record<string, unknown>): ActivityInp
   if (typeof endsAt === "string") fields.endsAt = endsAt;
   else if (typeof startsAt !== "string" && endsAt.getTime() <= startsAt.getTime()) fields.endsAt = "must be after the start";
 
-  let country: Country | null = null;
-  if (raw.country !== undefined && raw.country !== null && raw.country !== "") {
-    if (isPresentString(raw.country) && (COUNTRIES as readonly string[]).includes(raw.country)) {
-      country = raw.country as Country;
-    } else {
-      fields.country = `must be one of ${COUNTRIES.join(", ")}`;
-    }
-  }
-
-  let timezone = "";
-  if (isPresentString(raw.timezone)) {
-    timezone = raw.timezone.trim();
-    if (timezone.length < 1 || timezone.length > TIMEZONE_MAX_LENGTH || !isValidTimeZone(timezone)) {
-      fields.timezone = "must be a valid IANA time zone";
-    }
-  } else {
-    fields.timezone = "must be a string";
-  }
+  const country = isPresentString(raw.country) && (COUNTRIES as readonly string[]).includes(raw.country) ? raw.country as Country : null;
+  if (country === null) fields.country = `must be one of ${COUNTRIES.join(", ")}`;
 
   let priceMinorUnits = -1;
   if (typeof raw.priceMinorUnits === "number" && Number.isSafeInteger(raw.priceMinorUnits) && raw.priceMinorUnits >= 0) {
@@ -138,10 +121,10 @@ export function validateActivityInput(raw: Record<string, unknown>): ActivityInp
     fields.spots = `must be a positive whole number no greater than ${MAX_SPOTS}`;
   }
 
-  if (Object.keys(fields).length > 0 || typeof startsAt === "string" || typeof endsAt === "string") {
+  if (Object.keys(fields).length > 0 || typeof startsAt === "string" || typeof endsAt === "string" || country === null) {
     throw new ActivityValidationError(fields);
   }
-  return { title, description, itinerary, startsAt, endsAt, timezone, country, priceMinorUnits, currency, spots };
+  return { title, description, itinerary, startsAt, endsAt, timezone: COUNTRY_TIMEZONES[country], country, priceMinorUnits, currency, spots };
 }
 
 function parseInstant(raw: unknown): Date | string {

@@ -202,11 +202,6 @@ it("when a booking request is in flight, submit stays disabled and a second clic
   await act(async () => pending.resolve(ok(bookingEnvelope(true), 201)));
   await settle();
   expect(document.body.textContent).toContain("Your spot is saved");
-  expect(document.body.textContent).toContain("booking-booker");
-  const receipt = document.querySelector('[aria-label="Saved booking"]')!;
-  expect(receipt.textContent).toContain("plan-a");
-  expect(receipt.textContent).not.toContain("Source");
-  expect(receipt.textContent).not.toContain("direct");
   // The full-page detail leaves the grid unmounted until the back link.
   await click("Back to Explore");
   await settle();
@@ -342,8 +337,7 @@ it("when activity details fail, Retry keeps the selection and availability stays
     { authenticated: false },
   );
   const body = document.body.textContent ?? "";
-  expect(body).toContain("Details unavailable");
-  expect(body).toContain("Availability is unknown");
+  expect(body).toContain("Details unavailable. Availability is unknown, not zero.");
   expect(body).not.toContain("0 booked");
   expect(body).not.toContain("Full");
   fail = false;
@@ -406,9 +400,58 @@ it("when reopening with a saved booking, the receipt shows even though the activ
   });
   await settle();
   expect(document.body.textContent).toContain("Your spot is saved");
-  expect(document.body.textContent).toContain("booking-booker");
 });
 
+
+it("when a confirmed booking renders, the booking card keeps the confirmation and date without IDs, saved time or notes; GMT±x shows only when the offset differs", async () => {
+  const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  for (const [timezone, label] of [[viewerZone, null], ["Pacific/Kiritimati", "GMT+14"]] as const) {
+    await mount(async (url) => {
+      if (url.endsWith("/bookings/me")) return ok({ booking: bookingOf() });
+      if (url.endsWith("/my/activities")) return ok({ activities: [] });
+      if (url.includes("/activities/a")) return ok({ activity: detailOf("a", { timezone }), invites: {} });
+      if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+      return ok({});
+    });
+    const card = document.querySelector(".detail-aside .aside-card")!;
+    const text = card.textContent ?? "";
+    expect(text).toContain("Your spot is saved");
+    expect(text).toContain("Date and time");
+    expect(text).toMatch(/Jun 2026 · \d{2}:\d{2}–\d{2}:\d{2}/);
+    expect(text).not.toContain("booking-booker");
+    expect(text).not.toContain("plan-a");
+    expect(text).not.toContain("Saved");
+    expect(text).not.toContain("saved record");
+    expect(card.querySelector('[aria-label="Saved booking"]')).toBeNull();
+    if (label === null) expect(text).not.toMatch(/GMT/);
+    else expect(text).toContain(label);
+    await act(async () => root!.unmount());
+    localStorage.clear();
+  }
+  root = undefined;
+});
+
+it("when an activity page renders, the title row names the host and country, the description shows once, and no details card repeats the booking card", async () => {
+  await mount(async (url) => {
+    if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.includes("/activities/a")) return ok({ activity: detailOf("a", { description: "A calm evening paddle.", country: "GB" }), invites: {} });
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  });
+  const head = document.querySelector(".detail-head")!;
+  expect(head.querySelector("h1")?.textContent).toBe("Activity a");
+  expect(head.querySelector(".detail-facts")!.textContent).toContain("Hosted by Host");
+  expect(head.querySelector(".detail-facts")!.textContent).toContain("United Kingdom");
+  expect(head.textContent).not.toMatch(/Jun 2026/);
+  expect(document.body.textContent!.split("A calm evening paddle.")).toHaveLength(2);
+  expect(document.querySelector(".aside-facts")).toBeNull();
+  expect(document.body.textContent).not.toContain("Group size");
+  expect(document.body.textContent).not.toContain("Duration");
+  const aside = document.querySelector(".detail-aside")!;
+  const main = document.querySelector(".detail-main")!;
+  expect(head.compareDocumentPosition(aside) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(aside.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
 
 it("when reopening cannot check saved membership, only Check again is offered until absence is verified", async () => {
   let unavailable = true;
@@ -459,7 +502,7 @@ it("when the saved-booking lookup expires the credential, the remembered email r
   expect(localStorage.getItem("velio.session.v1")).toContain("restored-token");
   expect(document.querySelector('dialog[aria-label="Select your identity"]')).toBeNull();
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
-  expect(document.body.textContent).toContain("booking-booker");
+  expect(document.body.textContent).toContain("Your spot is saved");
   expect(posts).toBe(0);
 });
 
@@ -611,9 +654,9 @@ it("when a guest confirms then signs out, signing in with the same email reopens
   expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain(user.email);
   await click("Confirm one spot");
   await settle();
-  expect(document.body.textContent).toContain("booking-booker");
+  expect(document.body.textContent).toContain("Your spot is saved");
   await click("Sign out");
-  expect(document.body.textContent).not.toContain("booking-booker");
+  expect(document.body.textContent).not.toContain("Your spot is saved");
   // The grid returns through the detail's back link in the full-page layout.
   await click("Back to Explore");
   await settle();
@@ -635,8 +678,8 @@ it("when a guest confirms then signs out, signing in with the same email reopens
   const savedActivity = [...document.querySelectorAll<HTMLButtonElement>(".browse-item")].find(button => button.textContent?.includes("Activity a"))!;
   await act(async () => savedActivity.click());
   await settle();
-  expect(document.querySelector('[aria-label="Saved booking"]')!.textContent).toContain("booking-booker");
-  expect(document.querySelector('[aria-label="Saved booking"]')!.textContent).toContain("plan-a");
+  expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
+  expect(document.querySelector(".aside-card .notice-good")!.textContent).toContain("Your spot is saved");
   expect(entries).toEqual(["booker@example.test", "BOOKER@example.test"]);
   expect(posts).toBe(1);
 });
@@ -664,7 +707,7 @@ it("when confirmation expires the credential, restoring access checks the saved 
   await click("Book a spot");
   await click("Confirm one spot");
   await settle();
-  expect(document.body.textContent).toContain("booking-booker");
+  expect(document.body.textContent).toContain("Your spot is saved");
   expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain(user.email);
   expect(posts).toBe(1);
 });
@@ -850,7 +893,7 @@ it("when a booking is confirmed from checkout, Back to activity returns to the f
   await settle();
   expect(document.querySelector('[aria-label="Checkout"]')).toBeNull();
   expect(document.body.textContent).toContain("About this activity");
-  expect(document.querySelector('[aria-label="Saved booking"]')!.textContent).toContain("booking-booker");
+  expect(document.querySelector(".aside-card .notice-good")!.textContent).toContain("Your spot is saved");
 });
 
 it("when an invitation link is opened and left, the unpublished draft is kept", async () => {

@@ -30,7 +30,7 @@ export class RedisStallProxy {
       const upstream = net.connect(upstreamPort);
       this.upstreams.add(upstream);
       // Parse complete RESP request frames so a PUBLISH can be held before
-      // Redis receives it, while handshake/quota/subscription traffic flows.
+      // Redis receives it, while handshake/subscription traffic flows.
       let pending = Buffer.alloc(0);
       downstream.on("data", (chunk: Buffer) => {
         pending = Buffer.concat([pending, chunk]);

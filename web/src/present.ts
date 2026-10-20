@@ -9,13 +9,6 @@ export function initials(displayName: string): string {
   return word.slice(0, 2).toUpperCase();
 }
 
-/** "Africa/Lagos" → "Lagos time"; "UTC" stays "UTC". */
-export function zoneLabel(timezone: string): string {
-  if (!timezone.includes("/")) return timezone;
-  const city = timezone.split("/").pop()!.replaceAll("_", " ");
-  return `${city} time`;
-}
-
 export interface HostStatus {
   tone: "gray" | "blue" | "red";
   label: string;
@@ -60,23 +53,14 @@ export function chipDateRange(startsAt: string, endsAt: string, timezone: string
   return `${chipDateTime(startsAt, timezone)}–${end.time}${later}`;
 }
 
-export function durationLabel(startsAt: string, endsAt: string): string {
-  const minutes = Math.round((Date.parse(endsAt) - Date.parse(startsAt)) / 60_000);
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) return `${rest} min`;
-  if (rest === 0) return hours === 1 ? "1 hour" : `${hours} hours`;
-  return `${hours} h ${rest} min`;
-}
-
 export const COUNTRIES = [
-  ["GB", "United Kingdom"],
-  ["IE", "Ireland"],
-  ["FR", "France"],
-  ["DE", "Germany"],
-  ["NL", "Netherlands"],
-  ["ES", "Spain"],
-  ["NG", "Nigeria"],
+  ["GB", "United Kingdom", "Europe/London"],
+  ["IE", "Ireland", "Europe/Dublin"],
+  ["FR", "France", "Europe/Paris"],
+  ["DE", "Germany", "Europe/Berlin"],
+  ["NL", "Netherlands", "Europe/Amsterdam"],
+  ["ES", "Spain", "Europe/Madrid"],
+  ["NG", "Nigeria", "Africa/Lagos"],
 ] as const;
 
 export function countryName(code: string): string {

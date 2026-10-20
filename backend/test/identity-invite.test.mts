@@ -1,7 +1,6 @@
 import "../src/config.ts"; // loads the repo-root .env into process.env
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
-import { Redis } from "ioredis";
 import { createPool } from "../src/db/pool.ts";
 import { establishIdentity, type IdentityDeps } from "../src/identity/service.ts";
 import { publishActivity, type ActivitiesDeps } from "../src/activities/service.ts";
@@ -23,22 +22,15 @@ beforeAll(async () => {
   await resetAndMigrate(migrationUrl);
   await clearIdentityData(migrationUrl);
   pool = createPool(appUrl);
-  const redis = new Redis(process.env.REDIS_URL as string);
-  redis.on("error", () => {});
   identity = { pool, sessionTtlHours: 12 };
   activities = { pool, experiment: { allocationPercent: 100, experimentVersion: "t6-id" } };
-  const quota = { perIdentity: 1000, perIp: 100000, windowSeconds: 3600 };
   invites = {
     pool,
-    redis,
     inviteCreationEnabled: true,
     expiryHours: 336,
-    creationQuota: quota,
-    resolveQuota: { perIp: quota.perIp, windowSeconds: quota.windowSeconds },
   };
   host = (await establishIdentity(identity, { contactKey: uniqueKey("id-host"), displayName: "Acq Host" })).user;
   return () => {
-    redis.quit();
     return pool.end();
   };
 });
@@ -56,7 +48,7 @@ async function newShare(creator: UserSnapshot): Promise<{ code: string; generati
     title: `Acquisition ${uniqueKey("t")}`,
     startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
     endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-    timezone: "UTC",
+    country: "GB",
     priceMinorUnits: 1000,
     currency: "EUR",
     spots: 5,
@@ -153,7 +145,7 @@ describe("invite-aware identity acquisition", () => {
       title: `Expiry ${uniqueKey("t")}`,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 1000,
       currency: "EUR",
       spots: 5,

@@ -1,4 +1,3 @@
-import { consumeFixedWindowQuota } from "../ratelimit.js";
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type { AvailabilityUpdate } from "./publication.js";
@@ -175,10 +174,6 @@ export function registerLiveRoutes(app: FastifyInstance, deps: LiveGatewayDeps):
           });
           return;
         }
-        await consumeFixedWindowQuota(deps.redis, {
-          scope: "measurement-register", ip: request.ip,
-          limits: { perIdentity: 60, perIp: 60, windowSeconds: 3600 },
-        });
         const connectionId = await registerMeasurementConnection(deps.pool, {
           instanceId: deps.instanceId,
           leaseSeconds: deps.leaseSeconds,

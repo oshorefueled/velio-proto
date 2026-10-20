@@ -206,6 +206,34 @@ class InviteController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> closeInvite() async {
+    if (_claim is ClaimSubmitting) return;
+    if (_identityBusy) {
+      _identityRun += 1;
+      _identityBusy = false;
+    }
+    _codeGeneration += 1;
+    _claimRun += 1;
+    _live?.dispose();
+    _live = null;
+    _liveConnection = null;
+    _code = null;
+    _preview = null;
+    _resolving = false;
+    _resolveError = null;
+    _cachedAt = null;
+    _offlineNotice = null;
+    _checkout = false;
+    _retryEligible = false;
+    _claim = const ClaimIdle();
+    _hapticPending = false;
+    notifyListeners();
+    final device = _device ?? await store.load();
+    _device = device;
+    device.lastCode = null;
+    await store.save();
+  }
+
   /// App lifecycle: only a foregrounded preview refreshes periodically.
   void setForeground(bool foreground) {
     _foreground = foreground;
@@ -819,7 +847,7 @@ class InviteController extends ChangeNotifier {
           if (run != _claimRun) return;
           _claim = const ClaimRefused(
             reason: 'invite-mismatch',
-            message: 'This invitation is for another email. Sign out and use the invited email.',
+            message: 'This invitation was vouched for a different contact — switch to the account that was invited to claim it.',
           );
         case 'booking_outcome_unknown':
           await _reconcile(quiet: false);

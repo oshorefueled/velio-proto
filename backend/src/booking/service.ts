@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import type { Redis } from "ioredis";
 import { appendEvent } from "../events/append.js";
-import { consumeBookingQuota, RateLimitError, type QuotaLimits } from "../ratelimit.js";
 import { isActivityId } from "../activities/service.js";
 import { findInviteForClaim } from "../invites/service.js";
 import type { AvailabilityUpdate } from "../live/publication.js";
@@ -43,8 +41,6 @@ import {
 
 export interface BookingDeps {
   pool: Pool;
-  redis: Redis;
-  quota: QuotaLimits;
   lockTimeoutMs: number;
   statementTimeoutMs: number;
   /**
@@ -106,8 +102,7 @@ type AttemptOutcome =
   | "invite_used"
   | "lock_timeout"
   | "failed"
-  | "commit_unknown"
-  | "rate_limited";
+  | "commit_unknown";
 
 async function recordAttempt(
   executor: Pick<PoolClient, "query">,
@@ -208,26 +203,6 @@ export async function bookActivity(
   let source = input.inviteCode === undefined ? "direct" : "invited";
   const lockTimeoutMs = input.lockTimeoutMs ?? deps.lockTimeoutMs;
   const statementTimeoutMs = input.statementTimeoutMs ?? deps.statementTimeoutMs;
-
-  try {
-    await consumeBookingQuota(deps.redis, {
-      userId: person.id,
-      ip: input.ip,
-      limits: { perIdentity: deps.quota.perIdentity, perIp: deps.quota.perIp, windowSeconds: deps.quota.windowSeconds },
-    });
-  } catch (err) {
-    if (err instanceof RateLimitError) {
-      await recordAttemptBestEffort(deps.pool, {
-        attemptId,
-        source,
-        operationId,
-        outcome: "rate_limited",
-        userId: person.id,
-        activityId,
-      });
-    }
-    throw err;
-  }
 
   // Expected viewers are captured at booking start — before waiting on locks
   // or committing — from server-owned PostgreSQL presence, so viewers on any
