@@ -1339,23 +1339,50 @@ dialog.overlay::backdrop {
   background: rgba(16, 24, 40, 0.45);
 }
 
-.invite-entry {
-  margin-top: 12px;
-  padding-top: 10px;
+.invite-card .invite-prompt {
+  font-size: 1.05rem;
+  font-weight: 650;
+  margin: 0 0 0.6rem;
+}
+
+.invite-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.invite-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.invite-row .button-primary {
+  margin-top: 0;
+  align-self: stretch;
+}
+
+.invite-divider {
+  border: 0;
   border-top: 1px solid var(--border);
+  margin: 1.2rem 0;
 }
 
-.invite-back {
-  margin-bottom: 10px;
+.invite-generate {
+  width: 100%;
+  min-height: 42px;
 }
 
-.invite-rails {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 14px;
-  display: grid;
-  gap: 8px;
-  margin: 0 0 12px;
+.invite-link {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin: 0.6rem 0;
+}
+
+.invite-link code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.88rem;
 }
 
 .invite-rail {
@@ -1371,10 +1398,6 @@ dialog.overlay::backdrop {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
-}
-
-.invite-again {
-  margin-top: 6px;
 }
 
 .invite-landing {

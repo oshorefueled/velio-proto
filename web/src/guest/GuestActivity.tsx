@@ -9,6 +9,7 @@ import { LiveStatus } from "../live/LiveStatus.js";
 import { compareVersions, useLiveAcknowledgement, useLiveAvailability } from "../live/availability.js";
 import { useSession } from "../session.js";
 import { emitActivityViewed } from "../telemetry.js";
+import { InviteCard } from "./InviteCard.js";
 import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon, ClockIcon, GlobeIcon, GroupIcon } from "../icons.js";
 
 function BookingControls({
@@ -47,30 +48,6 @@ function BookingControls({
         <div className="notice notice-good" role="status">
           Your spot is saved — you are in the plan for {detail.title}.
         </div>
-        <dl className="receipt-grid" aria-label="Saved booking">
-          <div>
-            <dt>Booking</dt>
-            <dd>
-              <code>{phase.booking.id}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Plan</dt>
-            <dd><code>{phase.booking.planId}</code></dd>
-          </div>
-          <div>
-            <dt>Saved</dt>
-            <dd>
-              {new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" }).format(
-                new Date(phase.booking.createdAt),
-              )}
-            </dd>
-          </div>
-        </dl>
-        <p className="hint">
-          This is the saved record — reopening or refreshing shows it again, even if the
-          activity is now full or started.
-        </p>
       </div>
     );
   }
@@ -185,7 +162,6 @@ export function GuestActivity({
   booking,
   visible,
   observationId,
-  onOpenInvites,
   onAvailability,
   onBack,
   backLabel = "Back to Explore",
@@ -197,7 +173,6 @@ export function GuestActivity({
   visible: boolean;
   /** Shared per selected activity — a sibling panel's emission is a duplicate. */
   observationId: string;
-  onOpenInvites: () => void;
   /** Return from the detail page to the list it was opened from. */
   onBack?: () => void;
   backLabel?: string;
@@ -205,6 +180,7 @@ export function GuestActivity({
   const { api, state } = useSession();
   const [reviewing, setReviewing] = useState(false);
   const [detail, setDetail] = useState<ActivityDetailView | null>(null);
+  const [capabilities, setCapabilities] = useState<ActivityDetailView["invites"]>();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
@@ -232,9 +208,10 @@ export function GuestActivity({
     setLoadError(null);
     void (async () => {
       try {
-        const { activity } = await api.getActivity(activityId, { token: sessionToken });
+        const { activity, invites } = await api.getActivity(activityId, { token: sessionToken });
         if (generation.current !== currentGeneration) return;
         setDetail(activity);
+        setCapabilities(invites);
         setLoading(false);
         setValidityPending(false);
       } catch (err) {
@@ -456,14 +433,10 @@ export function GuestActivity({
               <span className="row-value">{countryName(detail.country)}</span>
             </div>}
           </div>
-          {isOwner && !reviewing && <div className="aside-card"><Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} /></div>}
-          {(isOwner || currentBooking?.phase.kind === "confirmed") && (
-            <div className="invite-entry">
-              <button type="button" className="button-ghost" onClick={onOpenInvites}>
-                Invite someone to this plan
-              </button>
-            </div>
+          {(isOwner || currentBooking?.phase.kind === "confirmed") && !reviewing && (
+            <InviteCard key={`${activityId}:${sessionToken}`} activityId={activityId} capabilities={capabilities} started={detail.started} />
           )}
+          {isOwner && !reviewing && <div className="aside-card"><Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} /></div>}
         </aside>
       </div>
       {!reviewing && <section className="detail-section previous-section">

@@ -6,7 +6,6 @@ import { IdentityPanel } from "./IdentityPanel.js";
 import { ActivityBrowser } from "./guest/ActivityBrowser.js";
 import { GuestActivity } from "./guest/GuestActivity.js";
 import { InviteLanding } from "./guest/InviteLanding.js";
-import { InvitePanel } from "./guest/InvitePanel.js";
 import { HostedActivities } from "./host/HostedActivities.js";
 import { PublishForm } from "./host/PublishForm.js";
 import { SavedBookings } from "./SavedBookings.js";
@@ -40,7 +39,6 @@ export function App(): ReactNode {
     return status.user.email === "host@velio.test" ? "hosting" : status.user.email === "booker@velio.test" ? "bookings" : "explore";
   });
   const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(location.search).get("activity"));
-  const [view, setView] = useState<"activity" | "invites">(() => new URLSearchParams(location.search).get("view") === "invites" ? "invites" : "activity");
   const [inviteCode, setInviteCode] = useState<string | null>(() => new URLSearchParams(location.search).get("invite")?.trim().toUpperCase() || null);
   const [hosted, setHosted] = useState<{ activities: HostActivityView[]; loading: boolean; error: string | null }>({ activities: [], loading: false, error: null });
   const [identityPrompt, setIdentityPrompt] = useState(false);
@@ -58,27 +56,24 @@ export function App(): ReactNode {
     else promptDialog.current?.close?.();
   }, [needsSignIn, ready]);
 
-  const syncUrl = useCallback((activityId: string | null, nextView: "activity" | "invites", code: string | null) => {
+  const syncUrl = useCallback((activityId: string | null, code: string | null) => {
     const url = new URL(location.href);
     if (activityId) url.searchParams.set("activity", activityId); else url.searchParams.delete("activity");
-    if (nextView === "invites") url.searchParams.set("view", "invites"); else url.searchParams.delete("view");
     if (code) url.searchParams.set("invite", code); else url.searchParams.delete("invite");
     if (url.href !== location.href) history.pushState(null, "", url);
   }, []);
   const selectActivity = useCallback((id: string | null) => {
-    setSelectedId(id); setView("activity"); setInviteCode(null);
-    syncUrl(id, "activity", null);
+    setSelectedId(id); setInviteCode(null);
+    syncUrl(id, null);
   }, [syncUrl]);
   function navigate(next: Page) {
-    setPage(next); setSelectedId(null); setView("activity"); setInviteCode(null);
-    syncUrl(null, "activity", null);
+    setPage(next); setSelectedId(null); setInviteCode(null);
+    syncUrl(null, null);
   }
   function chooseAccount(account: DemoAccount) {
     setPage(account === "Host" ? "hosting" : account === "Booker" ? "bookings" : "explore");
     setIdentityPrompt(false);
   }
-  function openInvites() { setView("invites"); syncUrl(selectedId, "invites", inviteCode); }
-  function backToActivity() { setView("activity"); syncUrl(selectedId, "activity", inviteCode); }
 
   const reloadHosted = useCallback(() => {
     if (!sessionToken) return;
@@ -99,7 +94,6 @@ export function App(): ReactNode {
     function pop() {
       const params = new URLSearchParams(location.search);
       setSelectedId(params.get("activity"));
-      setView(params.get("view") === "invites" ? "invites" : "activity");
       setInviteCode(params.get("invite")?.trim().toUpperCase() || null);
       setPage("explore");
     }
@@ -110,7 +104,7 @@ export function App(): ReactNode {
   // The redesigned screens are full pages: the selected activity is the
   // detail page, reached from any list and left via its back link or the
   // main navigation, which always opens that page's list.
-  const showDetail = selectedId !== null && view === "activity" && page !== "publish";
+  const showDetail = selectedId !== null && page !== "publish";
   const backLabel = page === "hosting" ? "Back to My activities" : page === "bookings" ? "Back to My bookings" : "Back to Explore";
 
   return <div className="app-shell">
@@ -137,17 +131,15 @@ export function App(): ReactNode {
     </dialog>}
     {status.status === "credential-lost" && status.restoring && <div className="page"><p className="notice" role="status">Restoring access for {status.lostFrom?.email}… Your checkout and drafts are kept.</p></div>}
     <main>
-      {inviteCode && <div className="page"><InviteLanding key={inviteCode} code={inviteCode} onCodeChange={code => { setInviteCode(code); syncUrl(selectedId, view, code); }} visible booking={bookingStore} onRequestIdentity={() => setIdentityPrompt(true)} onBrowse={() => { selectActivity(null); setPage("explore"); }} /></div>}
+      {inviteCode && <div className="page"><InviteLanding key={inviteCode} code={inviteCode} onCodeChange={code => { setInviteCode(code); syncUrl(selectedId, code); }} visible booking={bookingStore} onRequestIdentity={() => setIdentityPrompt(true)} onBrowse={() => { selectActivity(null); setPage("explore"); }} /></div>}
       {/* The publish draft stays mounted (hidden) so switching accounts,
           pages or opening an invitation retains every entered value. */}
       <div className="page page-narrow" hidden={page !== "publish" || !!inviteCode}>
         <PublishForm onPublished={activity => { selectActivity(activity.id); setPage("hosting"); reloadHosted(); }} />
       </div>
       {!inviteCode && <>
-        {page !== "publish" && (view === "invites" && selectedId
-          ? <div className="page"><InvitePanel key={selectedId} activityId={selectedId} onBack={backToActivity} onRequestIdentity={() => setIdentityPrompt(true)} /></div>
-          : showDetail && selectedId
-            ? <div className="page"><GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onOpenInvites={openInvites} onAvailability={setLiveAvailability} onBack={() => selectActivity(null)} backLabel={backLabel} /></div>
+        {page !== "publish" && (showDetail && selectedId
+            ? <div className="page"><GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onAvailability={setLiveAvailability} onBack={() => selectActivity(null)} backLabel={backLabel} /></div>
             : <div className="page">
               <div className="page-head">
                 <h1>{PAGE_TITLE[page].title}</h1>
