@@ -1,21 +1,18 @@
-/**
- * Activities domain language and publication invariants (CONTEXT.md Activity,
- * Spot, Availability; PLANS.md 3.2). A published activity is future-dated,
- * priced in minor units with an ISO currency, and never holds more bookings
- * than its spots. Remaining spots are derived, never stored.
- */
-
 export const TITLE_MAX_LENGTH = 200;
 export const TIMEZONE_MAX_LENGTH = 64;
 const MAX_SPOTS = 2147483647;
 const CURRENCIES = new Set<string>(Intl.supportedValuesOf("currency"));
+export const COUNTRIES = ["GB", "IE", "FR", "DE", "NL", "ES", "NG"] as const;
+export type Country = (typeof COUNTRIES)[number];
 
 export interface ActivityInput {
   itinerary: string;
   title: string;
   description: string;
   startsAt: Date;
+  endsAt: Date;
   timezone: string;
+  country: Country | null;
   priceMinorUnits: number;
   currency: string;
   spots: number;
@@ -27,7 +24,9 @@ export interface ActivityView {
   title: string;
   description: string;
   startsAt: string;
+  endsAt: string;
   timezone: string;
+  country: Country | null;
   priceMinorUnits: number;
   currency: string;
   capacity: number;
@@ -93,17 +92,19 @@ export function validateActivityInput(raw: Record<string, unknown>): ActivityInp
   if (!description) fields.description = "Describe the activity.";
   if (!itinerary) fields.itinerary = "Add the shared itinerary.";
 
-  let startsAt = new Date(Number.NaN);
-  if (isPresentString(raw.startsAt)) {
-    startsAt = new Date(raw.startsAt);
-    const instant = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.exec(raw.startsAt);
-    const calendarDate = instant ? new Date(`${instant[1]}T00:00:00Z`) : new Date(Number.NaN);
-    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(calendarDate.getTime()) ||
-        calendarDate.toISOString().slice(0, 10) !== instant?.[1] || /T24:/.test(raw.startsAt)) {
-      fields.startsAt = "must be an ISO 8601 instant with an explicit UTC offset (Z or ±HH:MM) and a real calendar date";
+  const startsAt = parseInstant(raw.startsAt);
+  if (typeof startsAt === "string") fields.startsAt = startsAt;
+  const endsAt = parseInstant(raw.endsAt);
+  if (typeof endsAt === "string") fields.endsAt = endsAt;
+  else if (typeof startsAt !== "string" && endsAt.getTime() <= startsAt.getTime()) fields.endsAt = "must be after the start";
+
+  let country: Country | null = null;
+  if (raw.country !== undefined && raw.country !== null && raw.country !== "") {
+    if (isPresentString(raw.country) && (COUNTRIES as readonly string[]).includes(raw.country)) {
+      country = raw.country as Country;
+    } else {
+      fields.country = `must be one of ${COUNTRIES.join(", ")}`;
     }
-  } else {
-    fields.startsAt = "must be a string containing an ISO 8601 instant";
   }
 
   let timezone = "";
@@ -137,10 +138,22 @@ export function validateActivityInput(raw: Record<string, unknown>): ActivityInp
     fields.spots = `must be a positive whole number no greater than ${MAX_SPOTS}`;
   }
 
-  if (Object.keys(fields).length > 0) {
+  if (Object.keys(fields).length > 0 || typeof startsAt === "string" || typeof endsAt === "string") {
     throw new ActivityValidationError(fields);
   }
-  return { title, description, itinerary, startsAt, timezone, priceMinorUnits, currency, spots };
+  return { title, description, itinerary, startsAt, endsAt, timezone, country, priceMinorUnits, currency, spots };
+}
+
+function parseInstant(raw: unknown): Date | string {
+  if (!isPresentString(raw)) return "must be a string containing an ISO 8601 instant";
+  const date = new Date(raw);
+  const instant = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.exec(raw);
+  const calendarDate = instant ? new Date(`${instant[1]}T00:00:00Z`) : new Date(Number.NaN);
+  if (Number.isNaN(date.getTime()) || Number.isNaN(calendarDate.getTime()) ||
+      calendarDate.toISOString().slice(0, 10) !== instant?.[1] || /T24:/.test(raw)) {
+    return "must be an ISO 8601 instant with an explicit UTC offset (Z or ±HH:MM) and a real calendar date";
+  }
+  return date;
 }
 
 /** The schedule must still be in the future at the moment of publication. */

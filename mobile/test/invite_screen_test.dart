@@ -526,4 +526,33 @@ void main() {
       expect(field.controller!.text, isEmpty);
     },
   );
+
+  testWidgets(
+    'the preview shows the end, a duration derived from start and end, and the country; a preview without them still renders',
+    (tester) async {
+      final transport = FakeTransport();
+      transport.responses['GET /invites/CODEBBBB'] = transport
+          .previewBody(code: 'CODEBBBB')
+          .replaceFirst(
+            '"timezone":"Europe/Stockholm"',
+            '"endsAt":"2026-12-01T21:30:00Z","timezone":"Europe/Stockholm","country":"GB"',
+          );
+      transport.responses['GET /invites/CODECCCC'] = transport.previewBody(
+        code: 'CODECCCC',
+      );
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final controller = await mountedController(tester, transport: transport);
+      await controller.openCode('CODEBBBB');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('· 3 h 30 min'), findsOneWidget);
+      expect(find.text('United Kingdom'), findsOneWidget);
+      await controller.openCode('CODECCCC');
+      await tester.pumpAndSettle();
+      expect(find.text('Evening walk'), findsWidgets);
+      expect(find.textContaining('Ends '), findsNothing);
+      expect(find.text('United Kingdom'), findsNothing);
+    },
+  );
 }

@@ -64,6 +64,7 @@ const activity = (id: string) => ({
   hostId: "host",
   planId: `plan-${id}`,
   startsAt: "2025-01-01T12:00:00Z",
+  endsAt: "2025-01-01T14:00:00Z",
   timezone: "UTC",
   priceMinorUnits: 1050,
   currency: "EUR",
@@ -378,7 +379,7 @@ it("when a booking arrives before the initial participant response, the host ref
 
 it("when an account signs out with an unpublished activity, switching accounts retains its title and itinerary", async () => {
   await mount(transportWith(async (url) => url.endsWith("/demo/sessions")
-    ? { status: 200, json: { session: { token: "booker-token" }, user: { ...user, id: "booker", email: "booker@demo.velio.test" } } }
+    ? { status: 200, json: { session: { token: "booker-token" }, user: { ...user, id: "booker", email: "booker@velio.test" } } }
     : { status: 200, json: { activity: activity("a"), invites: {} } }));
   await click("Publish activity");
   await act(async () => {

@@ -191,7 +191,9 @@ class InviteActivity {
     required this.title,
     required this.description,
     required this.startsAt,
+    this.endsAt,
     required this.timezone,
+    this.country,
     required this.priceMinorUnits,
     required this.currency,
     required this.capacity,
@@ -203,7 +205,9 @@ class InviteActivity {
   final String title;
   final String description;
   final String startsAt;
+  final String? endsAt;
   final String timezone;
+  final String? country;
   final int priceMinorUnits;
   final String currency;
   final int capacity;
@@ -220,7 +224,9 @@ class InviteActivity {
     title: title,
     description: description,
     startsAt: startsAt,
+    endsAt: endsAt,
     timezone: timezone,
+    country: country,
     priceMinorUnits: priceMinorUnits,
     currency: currency,
     capacity: capacity,
@@ -236,7 +242,9 @@ class InviteActivity {
       title: map['title'] as String,
       description: map['description'] as String,
       startsAt: map['startsAt'] as String,
+      endsAt: map['endsAt'] as String?,
       timezone: map['timezone'] as String,
+      country: map['country'] as String?,
       priceMinorUnits: (map['priceMinorUnits'] as num).toInt(),
       currency: map['currency'] as String,
       capacity: (map['capacity'] as num).toInt(),

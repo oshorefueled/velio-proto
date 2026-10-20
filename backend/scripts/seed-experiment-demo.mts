@@ -31,6 +31,7 @@ try {
     await operator.query("UPDATE users SET dataset = 'demo' WHERE id = $1", [host.id]);
     const base = { description: "A guided activity.", itinerary: "Meet, explore, return.",
       startsAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      endsAt: new Date(Date.now() + 7 * 24 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
       timezone: "UTC", priceMinorUnits: 1000, currency: "EUR", spots: 20,
     };
     const treatment = await publishActivity(

@@ -4,6 +4,7 @@ import { ApiError, type ActivityView } from "../api.js";
 import { localWallToUtcInstant, isValidTimeZone } from "../schedule.js";
 import { useSession } from "../session.js";
 import { InfoIcon } from "../icons.js";
+import { COUNTRIES } from "../present.js";
 
 /**
  * Host publication form (issue #14), revamped to the two numbered sections
@@ -35,13 +36,21 @@ const TIME_ZONES = [
   "UTC",
 ];
 
-function defaultLocalParts(): { date: string; time: string } {
+function defaultLocalParts(): { date: string; time: string; endTime: string } {
   const now = new Date(Date.now() + 48 * 3600 * 1000);
+  const end = new Date(now.getTime() + 2 * 3600 * 1000);
   const pad = (n: number): string => String(n).padStart(2, "0");
   return {
     date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
     time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+    endTime: `${pad(end.getHours())}:${pad(end.getMinutes())}`,
   };
+}
+
+function nextDay(date: string): string {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + 1);
+  return day.toISOString().slice(0, 10);
 }
 
 const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -55,10 +64,13 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
   const [timeZone, setTimeZone] = useState(browserZone);
   const [spots, setSpots] = useState("4");
   const [priceMinorUnits, setPriceMinorUnits] = useState("15.00");
-  const [currency, setCurrency] = useState<(typeof CURRENCIES)[number]>("EUR");
+  const [currency, setCurrency] = useState<(typeof CURRENCIES)[number]>("GBP");
+  const [country, setCountry] = useState<string>("GB");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  const endsNextDay = /^\d{2}:\d{2}$/.test(wall.endTime) && /^\d{2}:\d{2}$/.test(wall.time) && wall.endTime < wall.time;
 
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
@@ -68,6 +80,7 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
 
     const errors: Record<string, string> = {};
     let startsAt: string | null = null;
+    let endsAt: string | null = null;
     if (!description.trim()) errors.description = "Describe the activity.";
     if (!itinerary.trim()) errors.itinerary = "Add the shared itinerary.";
     if (title.trim().length === 0) errors.title = "Give the plan a title.";
@@ -77,6 +90,14 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
         startsAt = localWallToUtcInstant(`${wall.date}T${wall.time}`, timeZone).toISOString();
       } catch (err) {
         errors.startsAt = err instanceof Error ? err.message : "Check the date and time.";
+      }
+      if (wall.endTime === wall.time) errors.endsAt = "The end time must differ from the start time.";
+      else {
+        try {
+          endsAt = localWallToUtcInstant(`${endsNextDay ? nextDay(wall.date) : wall.date}T${wall.endTime}`, timeZone).toISOString();
+        } catch (err) {
+          errors.endsAt = err instanceof Error ? err.message : "Check the end time.";
+        }
       }
     }
     const spotsNumber = Number(spots);
@@ -99,7 +120,9 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
           description: description.trim(),
           itinerary: itinerary.trim(),
           startsAt: startsAt!,
+          endsAt: endsAt!,
           timezone: timeZone,
+          country: country || null,
           priceMinorUnits: priceNumber,
           currency,
           spots: spotsNumber,
@@ -197,6 +220,27 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
               />
             </div>
             <div>
+              <label htmlFor="pub-end-time">End time</label>
+              <input
+                id="pub-end-time"
+                type="time"
+                value={wall.endTime}
+                onChange={(event) => setWall(previous => ({ ...previous, endTime: event.target.value }))}
+                aria-invalid={fieldErrors.endsAt !== undefined}
+                aria-describedby={fieldErrors.endsAt !== undefined ? "pub-ends-error" : endsNextDay ? "pub-ends-hint" : undefined}
+              />
+              {endsNextDay && <p className="hint" id="pub-ends-hint">Ends the next day</p>}
+            </div>
+          </div>
+          {fieldErrors.startsAt !== undefined && (
+            <p className="field-error" id="pub-starts-error" role="alert">{fieldErrors.startsAt}</p>
+          )}
+          {fieldErrors.endsAt !== undefined && (
+            <p className="field-error" id="pub-ends-error" role="alert">{fieldErrors.endsAt}</p>
+          )}
+
+          <div className="form-grid-3">
+            <div>
               <label htmlFor="pub-timezone">Timezone</label>
               <select id="pub-timezone" value={timeZone} onChange={(event) => setTimeZone(event.target.value)}>
                 {[...new Set([browserZone, ...TIME_ZONES])].map((zone) => (
@@ -205,10 +249,15 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
               </select>
               {fieldErrors.timezone && <p className="field-error" role="alert">{fieldErrors.timezone}</p>}
             </div>
+            <div>
+              <label htmlFor="pub-country">Country</label>
+              <select id="pub-country" value={country} onChange={(event) => setCountry(event.target.value)}>
+                {COUNTRIES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+                <option value="">Not specified</option>
+              </select>
+              {fieldErrors.country && <p className="field-error" role="alert">{fieldErrors.country}</p>}
+            </div>
           </div>
-          {fieldErrors.startsAt !== undefined && (
-            <p className="field-error" id="pub-starts-error" role="alert">{fieldErrors.startsAt}</p>
-          )}
 
           <div className="form-grid-3">
             <div>

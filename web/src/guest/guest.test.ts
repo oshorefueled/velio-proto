@@ -77,6 +77,7 @@ const listItem = (id: string) => ({
   hostId: "host",
   title: `Activity ${id}`,
   startsAt: "2026-06-01T12:00:00Z",
+  endsAt: "2026-06-01T14:00:00Z",
   timezone: "UTC",
   priceMinorUnits: 1050,
   currency: "EUR",
@@ -93,6 +94,7 @@ const detailOf = (id: string, over: Record<string, unknown> = {}) => ({
   hostDisplayName: "Host",
   planId: `plan-${id}`,
   startsAt: "2026-06-01T12:00:00Z",
+  endsAt: "2026-06-01T14:00:00Z",
   timezone: "UTC",
   priceMinorUnits: 1050,
   currency: "EUR",
@@ -717,7 +719,7 @@ it("when an account shortcut is selected during checkout, unmounting email entry
   });
   await click("Book a spot");
   for (const account of ["Host", "Booker"]) {
-    const email = `${account.toLowerCase()}@demo.velio.test`;
+    const email = `${account.toLowerCase()}@velio.test`;
     await click(account);
     await settle();
     await act(async () => entry.resolve(ok({
@@ -731,7 +733,7 @@ it("when an account shortcut is selected during checkout, unmounting email entry
     expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain(email);
     entry = deferred<Awaited<ReturnType<Transport>>>();
   }
-  expect(emails).toEqual(["host@demo.velio.test", "booker@demo.velio.test"]);
+  expect(emails).toEqual(["host@velio.test", "booker@velio.test"]);
   expect(posts).toBe(0);
 });
 

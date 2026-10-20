@@ -27,8 +27,8 @@ beforeAll(async () => {
     bookerId = users.rows[1].id as string;
     const activity = await client.query(
       `WITH a AS (
-         INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-         VALUES ($1, 'Invite Schema', now() + interval '48 hours', 'UTC', 100, 'EUR', 5)
+         INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+         VALUES ($1, 'Invite Schema', now() + interval '48 hours', now() + interval '50 hours', 'UTC', 100, 'EUR', 5)
          RETURNING id
        ), p AS (INSERT INTO plans (activity_id) SELECT id FROM a RETURNING id)
        SELECT a.id AS activity_id, p.id AS plan_id FROM a, p`,
@@ -121,8 +121,8 @@ describe("invites schema", () => {
       client
         .query(
           `WITH a AS (
-             INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-             VALUES ($1, 'Other Plan', now() + interval '48 hours', 'UTC', 100, 'EUR', 5) RETURNING id
+             INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+             VALUES ($1, 'Other Plan', now() + interval '48 hours', now() + interval '50 hours', 'UTC', 100, 'EUR', 5) RETURNING id
            ), p AS (INSERT INTO plans (activity_id) SELECT id FROM a RETURNING id)
            SELECT p.id AS plan_id FROM p`,
           [hostId],

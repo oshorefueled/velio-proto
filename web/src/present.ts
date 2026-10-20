@@ -4,7 +4,6 @@
  * data the backend does not send.
  */
 
-/** "Ada · Demo host" → "AD"; the first two letters of the first word. */
 export function initials(displayName: string): string {
   const word = displayName.trim().split(/\s+/)[0] ?? "";
   return word.slice(0, 2).toUpperCase();
@@ -43,4 +42,43 @@ export function chipDateTime(startsAt: string, timezone: string): string {
   }).formatToParts(new Date(startsAt));
   const pick = (type: string): string => parts.find((part) => part.type === type)?.value ?? "";
   return `${pick("weekday")}, ${pick("day")} ${pick("month")} ${pick("year")} · ${pick("hour")}:${pick("minute")}`;
+}
+
+function zoneParts(instant: string, timezone: string): { day: string; time: string } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: timezone,
+  }).formatToParts(new Date(instant));
+  const pick = (type: string): string => parts.find((part) => part.type === type)?.value ?? "";
+  return { day: `${pick("year")}-${pick("month")}-${pick("day")}`, time: `${pick("hour")}:${pick("minute")}` };
+}
+
+export function chipDateRange(startsAt: string, endsAt: string, timezone: string): string {
+  const start = zoneParts(startsAt, timezone);
+  const end = zoneParts(endsAt, timezone);
+  const days = Math.round((Date.parse(`${end.day}T00:00:00Z`) - Date.parse(`${start.day}T00:00:00Z`)) / 86_400_000);
+  const later = days === 0 ? "" : days === 1 ? " (next day)" : ` (+${days} days)`;
+  return `${chipDateTime(startsAt, timezone)}–${end.time}${later}`;
+}
+
+export function durationLabel(startsAt: string, endsAt: string): string {
+  const minutes = Math.round((Date.parse(endsAt) - Date.parse(startsAt)) / 60_000);
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest} min`;
+  if (rest === 0) return hours === 1 ? "1 hour" : `${hours} hours`;
+  return `${hours} h ${rest} min`;
+}
+
+export const COUNTRIES = [
+  ["GB", "United Kingdom"],
+  ["IE", "Ireland"],
+  ["FR", "France"],
+  ["DE", "Germany"],
+  ["NL", "Netherlands"],
+  ["ES", "Spain"],
+  ["NG", "Nigeria"],
+] as const;
+
+export function countryName(code: string): string {
+  return COUNTRIES.find(([value]) => value === code)?.[1] ?? code;
 }

@@ -17,8 +17,8 @@ beforeAll(async () => {
       [`bk-host-${Date.now()}-${Math.random().toString(36).slice(2)}`],
     )).rows[0].id;
     activityId = (await client.query(
-      `INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-       VALUES ($1,'Book Schema Kayak', now() + interval '48 hours','UTC',1000,'EUR',3) RETURNING id`,
+      `INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+       VALUES ($1,'Book Schema Kayak', now() + interval '48 hours', now() + interval '50 hours','UTC',1000,'EUR',3) RETURNING id`,
       [hostId],
     )).rows[0].id;
     planId = (await client.query(
@@ -85,8 +85,8 @@ describe("booking schema", () => {
       client
         .query(
           `WITH other AS (
-             INSERT INTO activities (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity)
-             SELECT $1,'Other Activity', now() + interval '48 hours','UTC',1000,'EUR',2 RETURNING id
+             INSERT INTO activities (host_id, title, starts_at, ends_at, display_timezone, price_minor_units, currency, capacity)
+             SELECT $1,'Other Activity', now() + interval '48 hours', now() + interval '50 hours','UTC',1000,'EUR',2 RETURNING id
            )
            INSERT INTO plans (activity_id) SELECT id FROM other RETURNING id`,
           [hostId],

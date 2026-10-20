@@ -127,6 +127,7 @@ function previewFixture(code: string, over: PreviewOverride = {}) {
       title: "Evening walk",
       description: "Explore the city at sunset.",
       startsAt: "2026-12-01T18:00:00Z",
+      endsAt: "2026-12-01T20:00:00Z",
       timezone: "Europe/Stockholm",
       priceMinorUnits: 1200,
       currency: "EUR",

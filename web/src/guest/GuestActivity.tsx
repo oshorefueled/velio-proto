@@ -1,7 +1,7 @@
 import { IdentityPanel } from "../IdentityPanel.js";
 import { Participants } from "../host/Participants.js";
 import { formatMoneyCompact } from "../money.js";
-import { chipDateTime, initials, zoneLabel } from "../present.js";
+import { chipDateRange, chipDateTime, countryName, durationLabel, initials, zoneLabel } from "../present.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { BookingStore, BookingState } from "../booking-store.js";
 import type { ActivityDetailView } from "../api.js";
@@ -195,10 +195,6 @@ function BookingControls({
   );
 }
 
-function hostFirstName(hostDisplayName: string): string {
-  return hostDisplayName.split(" · ")[0];
-}
-
 export function GuestActivity({
   activityId,
   booking,
@@ -383,8 +379,8 @@ export function GuestActivity({
           <h1 className="detail-title" id="guest-detail-heading" ref={heading} tabIndex={-1}>{detail.title}</h1>
           <p className="detail-sub">{detail.description}</p>
           <div className="detail-facts">
-            <span className="hosted-by"><span className="avatar">{initials(detail.hostDisplayName)}</span> Hosted by {hostFirstName(detail.hostDisplayName)}</span>
-            <span className="chip"><CalendarIcon /> {chipDateTime(detail.startsAt, detail.timezone)}</span>
+            <span className="hosted-by"><span className="avatar">{initials(detail.hostDisplayName)}</span> Hosted by {detail.hostDisplayName}</span>
+            <span className="chip"><CalendarIcon /> {chipDateRange(detail.startsAt, detail.endsAt, detail.timezone)}</span>
             {detail.started && <span className="pill pill-blue">Started</span>}
           </div>
           <div className="gallery-main" aria-hidden="true" />
@@ -438,7 +434,7 @@ export function GuestActivity({
               <CalendarIcon />
               <div>
                 <div className="row-label">Date and time</div>
-                <div className="row-value">{chipDateTime(detail.startsAt, detail.timezone)} <span className="chip">{zoneLabel(detail.timezone)}</span></div>
+                <div className="row-value">{chipDateRange(detail.startsAt, detail.endsAt, detail.timezone)} <span className="chip">{zoneLabel(detail.timezone)}</span></div>
               </div>
             </div>
             <div className="aside-row">
@@ -487,6 +483,20 @@ export function GuestActivity({
                 <div className="row-value">Up to {detail.capacity} people</div>
               </div>
             </div>
+            <div className="aside-row">
+              <CalendarIcon />
+              <div>
+                <div className="row-label">Duration</div>
+                <div className="row-value">{durationLabel(detail.startsAt, detail.endsAt)}</div>
+              </div>
+            </div>
+            {detail.country !== null && <div className="aside-row">
+              <GlobeIcon />
+              <div>
+                <div className="row-label">Country</div>
+                <div className="row-value">{countryName(detail.country)}</div>
+              </div>
+            </div>}
             <div className="aside-row">
               <GlobeIcon />
               <div>

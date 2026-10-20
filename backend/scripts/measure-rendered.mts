@@ -108,12 +108,13 @@ async function main(): Promise<void> {
     return response.json.session.token as string;
   };
 
-  const host = await session("host@demo.velio.test", "Ada · Demo host");
+  const host = await session("host@velio.test", "Ada");
   const published = await call("POST", "/activities", {
-    title: "Rendered availability check · Demo",
+    title: "Rendered availability check",
     description: "Measured activity for the rendered-availability run.",
     itinerary: "Meet, walk, return.",
     startsAt: new Date(Date.now() + 4 * 86400000).toISOString(),
+    endsAt: new Date(Date.now() + 4 * 86400000 + 2 * 3600 * 1000).toISOString(),
     timezone: "Africa/Lagos", priceMinorUnits: 500000, currency: "NGN", spots: bookings + 10,
   }, host);
   if (published.status !== 201) throw new Error(`publication failed: ${published.status}`);

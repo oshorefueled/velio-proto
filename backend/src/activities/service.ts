@@ -7,6 +7,7 @@ import {
   validateActivityInput,
   type ActivityInput,
   type ActivityView,
+  type Country,
 } from "./domain.js";
 import { assignAtCreation, type SavedAssignment } from "../experiments/service.js";
 
@@ -45,7 +46,9 @@ export interface PublicActivityView {
   title: string;
   description: string;
   startsAt: string;
+  endsAt: string;
   timezone: string;
+  country: Country | null;
   priceMinorUnits: number;
   currency: string;
   capacity: number;
@@ -78,7 +81,9 @@ interface ActivityRow {
   itinerary?: string;
   host_summary?: string;
   starts_at: Date;
+  ends_at: Date;
   display_timezone: string;
+  country_code: Country | null;
   price_minor_units: string;
   currency: string;
   capacity: number;
@@ -96,7 +101,9 @@ function toView(row: ActivityRow): ActivityView {
     title: row.title,
     description: row.description,
     startsAt: row.starts_at.toISOString(),
+    endsAt: row.ends_at.toISOString(),
     timezone: row.display_timezone,
+    country: row.country_code,
     priceMinorUnits: Number(row.price_minor_units),
     currency: row.currency,
     capacity: row.capacity,
@@ -131,15 +138,17 @@ export async function publishActivity(
 
     const activity = await client.query<ActivityRow>(
       `INSERT INTO activities
-         (host_id, title, starts_at, display_timezone, price_minor_units, currency, capacity, description)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, host_id, title, description, starts_at, display_timezone,
+         (host_id, title, starts_at, ends_at, display_timezone, country_code, price_minor_units, currency, capacity, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, host_id, title, description, starts_at, ends_at, display_timezone, country_code,
                  price_minor_units, currency, capacity, booked_count, availability_version`,
       [
         host.id,
         input.title,
         input.startsAt,
+        input.endsAt,
         input.timezone,
+        input.country,
         input.priceMinorUnits,
         input.currency,
         input.spots,
@@ -178,7 +187,7 @@ export async function publishActivity(
   }
 }
 
-const PUBLIC_VIEW = `a.id, a.host_id, a.title, a.description, a.starts_at, a.display_timezone, a.price_minor_units,
+const PUBLIC_VIEW = `a.id, a.host_id, a.title, a.description, a.starts_at, a.ends_at, a.display_timezone, a.country_code, a.price_minor_units,
                      a.currency, a.capacity, a.booked_count, a.availability_version,
                      u.display_name AS host_display_name,
                      a.starts_at <= now() AS started`;
@@ -197,7 +206,9 @@ export async function listPublicActivities(deps: ActivitiesDeps): Promise<Public
     title: row.title,
     description: row.description,
     startsAt: row.starts_at.toISOString(),
+    endsAt: row.ends_at.toISOString(),
     timezone: row.display_timezone,
+    country: row.country_code,
     priceMinorUnits: Number(row.price_minor_units),
     currency: row.currency,
     capacity: row.capacity,
@@ -247,7 +258,7 @@ export async function listHostActivities(
   host: { id: string },
 ): Promise<HostActivityView[]> {
   const result = await deps.pool.query<ActivityRow>(
-    `SELECT a.id, a.host_id, a.title, a.description, a.starts_at, a.display_timezone, a.price_minor_units,
+    `SELECT a.id, a.host_id, a.title, a.description, a.starts_at, a.ends_at, a.display_timezone, a.country_code, a.price_minor_units,
             a.currency, a.capacity, a.booked_count, a.availability_version,
             a.starts_at <= now() AS started
      FROM activities a

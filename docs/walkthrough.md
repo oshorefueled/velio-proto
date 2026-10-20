@@ -4,7 +4,7 @@ This is a rehearsal order for presenting the prototype. Setup is in the [README]
 
 ## Order
 
-1. **Host publishes** on web. Choose **Host** and select **Publish activity**. Enter a title, description, itinerary, a start time and timezone, spots, and a price in a normal currency. The new activity opens with **0 booked · N remaining** and an empty participant list.
+1. **Host publishes** on web. Choose **Host** and select **Publish activity**. Enter a title, description, itinerary, a start and end time and timezone, an optional country, spots, and a price in a normal currency. The new activity opens with **0 booked · N remaining** and an empty participant list.
 2. **Booker books and invites** on web, in a second browser window. Choose **Booker**, open the activity and select **Book a spot**. Review the checkout and select **Confirm one spot**. Then open **Invite someone to this plan**:
    - **Copy public link** creates the reusable link;
    - **Invite someone** with an email creates a personal invitation for that address.

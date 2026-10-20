@@ -11,12 +11,12 @@ export function AccountSelector({ onSelect, onSignIn }: {
   const { state, store } = useSession();
   const [pendingSelection, setPendingSelection] = useState<DemoAccount>("Guest");
   const user = state.status.status === "ready" ? state.status.user : null;
-  const selected = user ? user.email === "host@demo.velio.test" ? "Host" : user.email === "booker@demo.velio.test" ? "Booker" : "Guest" : pendingSelection;
+  const selected = user ? user.email === "host@velio.test" ? "Host" : user.email === "booker@velio.test" ? "Booker" : "Guest" : pendingSelection;
   function select(account: DemoAccount) {
     setPendingSelection(account);
     store.signOut();
     onSelect?.(account);
-    if (account !== "Guest") void store.establish({ email: `${account.toLowerCase()}@demo.velio.test` });
+    if (account !== "Guest") void store.establish({ email: `${account.toLowerCase()}@velio.test` });
   }
   return <div className="account-access">
     <span className="demo-label">Demo account</span>
