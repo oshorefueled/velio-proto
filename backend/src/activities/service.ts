@@ -66,11 +66,8 @@ export interface ParticipantsView {
   activityId: string;
   planId: string;
   confirmedCount: number;
-  /**
-   * Confirmed participants; rows arrive with bookings in ticket #4, so the
-   * prototype lists an empty plan faithfully until then.
-   */
-  participants: Array<{ userId: string; displayName: string }>;
+  /** Confirmed participants; the host sees a masked email, never the raw one. */
+  participants: Array<{ userId: string; bookingId: string; displayName: string; maskedEmail: string }>;
 }
 
 interface ActivityRow {
@@ -284,10 +281,13 @@ export async function listParticipants(
     plan_id: string;
     confirmed_total: string;
     participant_user_id: string | null;
+    participant_booking_id: string | null;
     participant_display_name: string | null;
+    participant_email: string | null;
   }>(
     `SELECT a.id, a.host_id, p.id AS plan_id,
-            b.user_id AS participant_user_id, u.display_name AS participant_display_name,
+            b.user_id AS participant_user_id, b.id AS participant_booking_id,
+            u.display_name AS participant_display_name, u.contact_key AS participant_email,
             count(b.user_id) OVER () AS confirmed_total
      FROM activities a
      JOIN plans p ON p.activity_id = a.id
@@ -314,8 +314,20 @@ export async function listParticipants(
     confirmedCount: Number(first.confirmed_total ?? 0),
     participants: rows
       .filter((row): row is typeof row & { participant_user_id: string } => row.participant_user_id !== null)
-      .map((row) => ({ userId: row.participant_user_id, displayName: row.participant_display_name ?? "" })),
+      .map((row) => ({
+        userId: row.participant_user_id,
+        bookingId: row.participant_booking_id ?? "",
+        displayName: row.participant_display_name ?? "",
+        maskedEmail: maskEmail(row.participant_email ?? ""),
+      })),
   };
+}
+
+/** First character of the local part, then the domain: `a***@example.com`. */
+export function maskEmail(email: string): string {
+  const at = email.lastIndexOf("@");
+  if (at <= 0) return "***";
+  return `${email[0]}***${email.slice(at)}`;
 }
 
 export async function getHostContext(deps: { pool: Pick<Pool, "query"> }, activity: ActivityDetailView) {

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'api.dart';
 import 'device_store.dart';
 import 'invite_links.dart';
+import 'live_availability.dart';
 
 /// One invite/identity/claim lifecycle owner (issue #19): manual code entry
 /// and later link handoffs feed the same controller. Views render immutable
@@ -23,10 +24,15 @@ import 'invite_links.dart';
 /// - Every async callback is owned by captured token/run generations: a late
 ///   response can never confirm a replaced code or expire a newer identity.
 class InviteController extends ChangeNotifier {
-  InviteController({required this.api, required this.store});
+  InviteController({required this.api, required this.store, this.liveConnector});
 
   final VelioApi api;
   final DeviceStore store;
+
+  /// Live availability for the displayed preview; null keeps it offline.
+  final LiveConnector? liveConnector;
+  LiveAvailability? _live;
+  bool _foreground = true;
   StoredDevice? _device;
 
   String? _code;
@@ -52,6 +58,9 @@ class InviteController extends ChangeNotifier {
   int _savedRun = 0;
 
   bool get checkout => _checkout;
+
+  /// Displayed availability may be out of date (known live loss/failed refresh).
+  bool get availabilityStale => _live?.stale ?? false;
   List<SavedBookingSummary> get savedBookings =>
       List.unmodifiable(_savedBookings);
   ActivityDetails? get savedDetails => _savedDetails;
@@ -161,6 +170,81 @@ class InviteController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// App lifecycle: only a foregrounded preview refreshes periodically.
+  void setForeground(bool foreground) {
+    _foreground = foreground;
+    _live?.setForeground(foreground);
+  }
+
+  /// Called post-frame by the UI once the preview's availability rendered.
+  void noteAvailabilityRendered() {
+    final preview = _preview;
+    if (preview != null) _live?.markRendered(preview.activity.availabilityVersion);
+  }
+
+  /// Any other database read of the invitation refreshes its facts. While a
+  /// live owner exists, counts change only through its version arbitration
+  /// (and are acknowledged there); a newer read reaches it within one refresh.
+  void _acceptPreview(InvitePreview fresh) {
+    final current = _preview;
+    if (_live != null &&
+        current != null &&
+        current.activity.id == fresh.activity.id) {
+      _preview = fresh.withActivity(current.activity);
+      return;
+    }
+    _preview = fresh;
+  }
+
+  /// One live owner per displayed preview activity (SPEC C5). Its snapshot
+  /// reads the public activity (not the quota-bounded invitation resolve);
+  /// counts change only through the owner's version arbitration.
+  void _bindLive(InvitePreview preview, int generation) {
+    final connector = liveConnector;
+    if (connector == null) return;
+    late final LiveAvailability live;
+    live = LiveAvailability(
+      activityId: preview.activity.id,
+      displayedVersion: preview.activity.availabilityVersion,
+      connect: connector,
+      foreground: _foreground,
+      loadSnapshot: () async {
+        final fresh = (await api.getActivity(preview.activity.id)).activity;
+        return LiveFacts(
+          version: fresh.availabilityVersion,
+          remainingSpots: fresh.remainingSpots,
+        );
+      },
+      postAck: api.postAvailabilityAck,
+    );
+    live.addListener(() {
+      if (_live != live) return;
+      final applied = live.applied;
+      final current = _preview;
+      if (applied != null &&
+          current != null &&
+          current.activity.id == live.activityId &&
+          compareVersions(applied.version, current.activity.availabilityVersion) > 0) {
+        _preview = current.withActivity(
+          current.activity.withAvailability(
+            version: applied.version,
+            remainingSpots: applied.remainingSpots,
+          ),
+        );
+      }
+      notifyListeners();
+    });
+    _live = live;
+    live.start();
+  }
+
+  @override
+  void dispose() {
+    _live?.dispose();
+    _live = null;
+    super.dispose();
+  }
+
   Future<void> openLink(InviteLink link) async {
     final device = _device ?? await store.load();
     _device = device;
@@ -182,6 +266,8 @@ class InviteController extends ChangeNotifier {
     }
     _code = code;
     _claimRun += 1;
+    _live?.dispose();
+    _live = null;
     _checkout = false;
     _retryEligible = false;
     _preview = null;
@@ -206,6 +292,7 @@ class InviteController extends ChangeNotifier {
       if (generation != _codeGeneration) return;
       _preview = preview;
       _resolving = false;
+      _bindLive(preview, generation);
       notifyListeners();
       await _quietBookingCheck();
     } catch (error) {
@@ -522,7 +609,7 @@ class InviteController extends ChangeNotifier {
           try {
             final refreshed = await api.resolveInvite(preview.code);
             if (run != _claimRun) return;
-            _preview = refreshed;
+            _acceptPreview(refreshed);
           } catch (_) {
             if (run != _claimRun) return;
             _resolveError = 'Could not refresh availability. Your booking was not saved; retry the invitation preview.';
@@ -557,7 +644,7 @@ class InviteController extends ChangeNotifier {
           try {
             final refreshed = await api.resolveInvite(preview.code);
             if (run != _claimRun) return;
-            _preview = refreshed;
+            _acceptPreview(refreshed);
           } catch (_) {
             // The refusal already explains the outcome; the preview stays.
           }
@@ -655,7 +742,7 @@ class InviteController extends ChangeNotifier {
             _retryEligible =
                 refreshed.state == 'claimable' &&
                 refreshed.activity.remainingSpots > 0;
-            if (_preview?.code == refreshed.code) _preview = refreshed;
+            if (_preview?.code == refreshed.code) _acceptPreview(refreshed);
             _claim = ClaimRefused(
               reason: _retryEligible ? 'absent' : 'unavailable',
               // The original request may still be committing on the server;

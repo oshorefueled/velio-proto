@@ -238,7 +238,15 @@ describe("GET /activities/:id/bookings/me", () => {
     expect(ownerView.statusCode).toBe(200);
     const body = ownerView.json();
     expect(body.confirmedCount).toBe(1);
-    expect(body.participants).toEqual([{ userId: bookerUserId, displayName: "Visible Booker" }]);
+    expect(body.participants).toEqual([
+      {
+        userId: bookerUserId,
+        bookingId: booked.json().booking.id,
+        displayName: "Visible Booker",
+        maskedEmail: "b***@example.test",
+      },
+    ]);
+    expect(JSON.stringify(body)).not.toContain("bk4-route");
 
     const foreign = await app.inject({
       method: "GET",

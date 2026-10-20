@@ -24,18 +24,27 @@ export interface PresenceDeps {
 /** Register one measurement connection and its current activity presence. */
 export async function registerMeasurementConnection(
   executor: Pick<PoolClient, "query">,
-  input: { instanceId: string; leaseSeconds: number; activities: string[]; visible: boolean },
+  input: {
+    instanceId: string;
+    leaseSeconds: number;
+    activities: string[];
+    visible: boolean;
+    /** The same viewer's earlier connection; an unknown id starts a new viewer. */
+    previousConnectionId?: string;
+  },
 ): Promise<string> {
   const inserted = await executor.query<{ connection_id: string }>(
     `WITH connection AS (
-       INSERT INTO live_connections (instance_id, lease_expires_at)
-       VALUES ($1, now() + make_interval(secs => $2)) RETURNING connection_id
+       INSERT INTO live_connections (instance_id, lease_expires_at, viewer_id)
+       VALUES ($1, now() + make_interval(secs => $2),
+               COALESCE((SELECT viewer_id FROM live_connections WHERE connection_id = $5), gen_random_uuid()))
+       RETURNING connection_id
      ), presence AS (
        INSERT INTO live_presence (connection_id, activity_id, visible, active)
        SELECT connection_id, activity_id, $4, true
        FROM connection CROSS JOIN unnest($3::uuid[]) AS activity_id
      ) SELECT connection_id FROM connection`,
-    [input.instanceId, input.leaseSeconds, input.activities, input.visible],
+    [input.instanceId, input.leaseSeconds, input.activities, input.visible, input.previousConnectionId ?? null],
   );
   return inserted.rows[0]!.connection_id;
 }

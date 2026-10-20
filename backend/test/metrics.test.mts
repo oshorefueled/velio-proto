@@ -167,12 +167,12 @@ interface RegisteredViewer {
 }
 
 /** Real socket: subscribe, opt into measurement, await both server acks. */
-async function registerViewer(activityId: string, visible = true): Promise<RegisteredViewer> {
+async function registerViewer(activityId: string, visible = true, previousConnectionId?: string): Promise<RegisteredViewer> {
   const socket = new WebSocket(`${baseUrl}/live`);
   await new Promise((resolve) => socket.once("open", resolve));
   socket.send(JSON.stringify({ type: "subscribe", activityId }));
   const subscribed = collect(socket, (f) => f.type === "subscribed", 2000);
-  socket.send(JSON.stringify({ type: "register_measurement", visible }));
+  socket.send(JSON.stringify({ type: "register_measurement", visible, ...(previousConnectionId ? { previousConnectionId } : {}) }));
   const registered = collect(socket, (f) => f.type === "measurement_registered", 2000);
   const [subscribedFrames] = await Promise.all([subscribed.done, registered.done]);
   expect(subscribedFrames.some((f) => f.type === "subscribed")).toBe(true);
@@ -653,6 +653,36 @@ describe("applied availability measurement (issue #11 AC2/AC3)", () => {
       source: "snapshot", reason: "foreground", count: 2, withinDeadline: 0, late: 2,
     });
     stayer.socket.close();
+  });
+
+  it("closes a disconnected viewer's captured update when that viewer reconnects and renders a recovery snapshot", async () => {
+    await resetMeasurements();
+    const host = await establish("Recovery Host");
+    const booker = await establish("Recovery Booker");
+    const activityId = await publishActivity(host.token, "Recovery Activity", 5);
+    const first = await registerViewer(activityId, true);
+    const unrelated = await registerViewer(activityId, true);
+
+    expect((await book(booker.token, activityId)).statusCode).toBe(201);
+    first.socket.close(); // missed the frame before rendering it
+    const version = await withClient(appUrl, async (client) =>
+      (await client.query("SELECT availability_version::text AS v FROM activities WHERE id = $1", [activityId])).rows[0]!.v as string);
+
+    // The same viewer returns on a new socket and presents its earlier capability.
+    const returned = await registerViewer(activityId, true, first.connectionId);
+    expect(returned.connectionId).not.toBe(first.connectionId);
+    const recovered = await ack(returned, { appliedVersion: version, source: "snapshot", reason: "reconnect" });
+    expect(recovered.statusCode).toBe(200);
+    expect(recovered.json().ack.closed).toHaveLength(1);
+
+    const [captured] = await measurementRows("activity_id = $1 AND connection_id = $2", [activityId, first.connectionId]);
+    expect(captured).toMatchObject({ ack_source: "snapshot", ack_reason: "reconnect", ack_applied_version: version });
+    expect(captured!.acked_at).not.toBeNull();
+    // Another viewer's capability cannot close this viewer's evidence, nor the reverse.
+    const [other] = await measurementRows("activity_id = $1 AND connection_id = $2", [activityId, unrelated.connectionId]);
+    expect(other!.acked_at).toBeNull();
+    returned.socket.close();
+    unrelated.socket.close();
   });
 
   it("keeps the ack quota bounded per IP", async () => {

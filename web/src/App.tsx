@@ -38,6 +38,7 @@ export function App(): ReactNode {
   const [inviteCode, setInviteCode] = useState<string | null>(() => new URLSearchParams(location.search).get("invite")?.trim().toUpperCase() || null);
   const [hosted, setHosted] = useState<{ activities: HostActivityView[]; loading: boolean; error: string | null }>({ activities: [], loading: false, error: null });
   const [identityPrompt, setIdentityPrompt] = useState(false);
+  const [liveAvailability, setLiveAvailability] = useState<{ activityId: string; version: string; remainingSpots: number } | null>(null);
   const promptDialog = useRef<HTMLDialogElement>(null);
   const hostedGeneration = useRef(0);
   const observationId = useMemo(() => crypto.randomUUID(), [selectedId, sessionToken]);
@@ -125,13 +126,13 @@ export function App(): ReactNode {
       </div>
       {!inviteCode && page !== "publish" && <>
         <div className="column">
-          {page === "explore" ? <ActivityBrowser selectedId={selectedId} onSelect={selectActivity} bookingRevision={bookingRevision} />
+          {page === "explore" ? <ActivityBrowser selectedId={selectedId} onSelect={selectActivity} bookingRevision={bookingRevision} live={liveAvailability} />
             : page === "hosting" ? <HostedActivities activities={hosted.activities} selectedId={selectedId} onSelect={selectActivity} reload={reloadHosted} loading={hosted.loading} error={hosted.error} />
               : ready ? <SavedBookings onSelect={selectActivity} /> : <p className="hint">Sign in to see your bookings.</p>}
         </div>
         <div className="column">
           {view === "invites" && selectedId ? <InvitePanel key={selectedId} activityId={selectedId} onBack={backToActivity} onRequestIdentity={() => setIdentityPrompt(true)} />
-            : selectedId ? <GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onOpenInvites={openInvites} />
+            : selectedId ? <GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onOpenInvites={openInvites} onAvailability={setLiveAvailability} />
               : <div className="selection-intro"><p className="eyebrow">{page === "hosting" ? "Make something happen" : page === "bookings" ? "Your next outing" : "Find your people"}</p><h2>{page === "hosting" ? "Bring a good plan to life." : "A little adventure starts here."}</h2><p>{page === "hosting" ? "Choose an activity to see its bookings, or publish something new." : "Choose an activity to see the itinerary, meet your host and plan your day."}</p></div>}
         </div>
       </>}

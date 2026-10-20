@@ -20,7 +20,8 @@ class InviteScreen extends StatefulWidget {
   State<InviteScreen> createState() => _InviteScreenState();
 }
 
-class _InviteScreenState extends State<InviteScreen> {
+class _InviteScreenState extends State<InviteScreen>
+    with WidgetsBindingObserver {
   final _codeField = TextEditingController();
   final _contactField = TextEditingController();
   String? _displayedCode;
@@ -29,6 +30,7 @@ class _InviteScreenState extends State<InviteScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_onControllerChanged);
     _displayedCode = widget.controller.code;
     _codeField.text = _displayedCode ?? '';
@@ -39,6 +41,7 @@ class _InviteScreenState extends State<InviteScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_onControllerChanged);
     _codeField.dispose();
     _contactField.dispose();
@@ -54,8 +57,15 @@ class _InviteScreenState extends State<InviteScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       widget.controller.notePreviewDisplayed();
+      // Rendered-availability acknowledgement follows the committed frame.
+      widget.controller.noteAvailabilityRendered();
     });
     setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    widget.controller.setForeground(state == AppLifecycleState.resumed);
   }
 
   @override
@@ -253,6 +263,12 @@ class _PreviewCard extends StatelessWidget {
               '${activity.bookedCount} booked · ${activity.remainingSpots} remaining of ${activity.capacity}',
               key: const Key('availability'),
             ),
+            if (controller.availabilityStale)
+              const Text(
+                'Availability may be out of date — reconnecting.',
+                key: Key('availability-stale'),
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
             if (_explanation(preview.state) != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),

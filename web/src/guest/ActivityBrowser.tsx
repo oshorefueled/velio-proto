@@ -1,6 +1,7 @@
 import { formatMoney } from "../money.js";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PublicActivityView } from "../api.js";
+import { compareVersions } from "../live/availability.js";
 import { useSession } from "../session.js";
 
 /**
@@ -16,10 +17,13 @@ export function ActivityBrowser({
   selectedId,
   onSelect,
   bookingRevision = 0,
+  live = null,
 }: {
   selectedId: string | null;
   onSelect: (activityId: string) => void;
   bookingRevision?: number;
+  /** The selected activity's live availability; a newer version wins over the loaded row. */
+  live?: { activityId: string; version: string; remainingSpots: number } | null;
 }): ReactNode {
   const { api } = useSession();
   const [activities, setActivities] = useState<PublicActivityView[] | null>(null);
@@ -74,7 +78,12 @@ export function ActivityBrowser({
         <p className="hint">Nothing published yet — check back soon.</p>
       )}
       <ul className="browse-list">
-        {(activities ?? []).map((activity) => (
+        {(activities ?? []).map((loaded) => {
+          const activity =
+            live !== null && live.activityId === loaded.id && compareVersions(live.version, loaded.availabilityVersion) > 0
+              ? { ...loaded, remainingSpots: live.remainingSpots }
+              : loaded;
+          return (
           <li key={activity.id}>
             <button
               type="button"
@@ -99,7 +108,8 @@ export function ActivityBrowser({
               </span>
             </button>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </section>
   );

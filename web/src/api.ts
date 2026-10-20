@@ -112,7 +112,7 @@ export interface ParticipantsView {
   activityId: string;
   planId: string;
   confirmedCount: number;
-  participants: Array<{ userId: string; displayName: string }>;
+  participants: Array<{ userId: string; bookingId: string; displayName: string; maskedEmail: string }>;
 }
 
 /** Saved invitation exactly as docs/client-contract.md §4 documents it. */

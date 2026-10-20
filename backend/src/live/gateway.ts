@@ -26,7 +26,8 @@ import {
  *
  * Protocol (documented in README):
  *   client -> {type:"subscribe", activityId} | {type:"unsubscribe", activityId}
- *             | {type:"register_measurement", visible}  (opt-in, once per socket)
+ *             | {type:"register_measurement", visible, previousConnectionId?}
+ *                                                       (opt-in, once per socket)
  *             | {type:"visibility", visible}            (opt-in follow-up)
  *   server -> {type:"availability", ...} | {type:"resnapshot"} |
  *             {type:"subscribed", activityId} |
@@ -143,7 +144,7 @@ export function registerLiveRoutes(app: FastifyInstance, deps: LiveGatewayDeps):
     let framesInWindow = 0;
     const handleMessage = async (raw: unknown) => {
       if (closed) return;
-      let message: { type?: unknown; activityId?: unknown; visible?: unknown };
+      let message: { type?: unknown; activityId?: unknown; visible?: unknown; previousConnectionId?: unknown };
       try {
         message = JSON.parse(String(raw));
       } catch {
@@ -159,7 +160,11 @@ export function registerLiveRoutes(app: FastifyInstance, deps: LiveGatewayDeps):
       // repeat. The identifier is server-issued; the client's visibility
       // report is stored but never treated as proof of attention.
       if (message.type === "register_measurement") {
-        if (typeof message.visible !== "boolean") {
+        const previous = message.previousConnectionId;
+        if (
+          typeof message.visible !== "boolean" ||
+          (previous !== undefined && (typeof previous !== "string" || !UUID_PATTERN.test(previous)))
+        ) {
           send({ type: "error", code: "invalid_message" });
           return;
         }
@@ -179,6 +184,7 @@ export function registerLiveRoutes(app: FastifyInstance, deps: LiveGatewayDeps):
           leaseSeconds: deps.leaseSeconds,
           activities: [...registered.subscriptions],
           visible: message.visible,
+          previousConnectionId: previous?.toLowerCase(),
         });
         registered.measurement = { connectionId, visible: message.visible };
         measurementConnections.add(connectionId);
