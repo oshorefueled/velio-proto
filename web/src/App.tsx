@@ -42,7 +42,7 @@ export function App(): ReactNode {
   }, [bookingStore]);
   const [page, setPage] = useState<Page>(() => {
     const linked = pageIn(location.search);
-    if (linked !== null) return linked;
+    if (linked === "explore" || (linked !== null && ready)) return linked;
     if (new URLSearchParams(location.search).has("activity") || !ready) return "explore";
     return status.user.email === "host@velio.test" ? "hosting" : status.user.email === "booker@velio.test" ? "bookings" : "explore";
   });
@@ -65,7 +65,7 @@ export function App(): ReactNode {
   }, [needsSignIn, ready]);
 
   useEffect(() => {
-    if (pageIn(location.search) !== null) return;
+    if (pageIn(location.search) === page) return;
     const url = new URL(location.href);
     url.searchParams.set("page", page);
     history.replaceState(null, "", url);

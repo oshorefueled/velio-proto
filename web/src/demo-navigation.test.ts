@@ -119,3 +119,22 @@ it("when the default page opens an activity, browser back returns to that defaul
     expect(heading()).toBe("My bookings");
   } finally { await act(async () => root.unmount()); container.remove(); localStorage.clear(); vi.unstubAllGlobals(); }
 });
+
+it("when a signed-out visitor opens a shared link naming a private list page, the activity returns to Explore", async () => {
+  localStorage.clear(); window.history.replaceState(null, "", "/?page=hosting&activity=paddle");
+  const listed = { id: "paddle", hostId: "host", title: "Sunset paddle", description: "On the water.", startsAt: "2030-11-20T16:00:00Z", endsAt: "2030-11-20T18:00:00Z", timezone: "Europe/London", country: "GB", priceMinorUnits: 1000, currency: "GBP", capacity: 4, bookedCount: 1, remainingSpots: 3, availabilityVersion: "1", hostDisplayName: "Ada", started: false };
+  const transport: Transport = async (url) => {
+    if (url.endsWith("/activities/paddle")) return { status: 200, json: { activity: listed, plan: { id: "plan", itinerary: "Paddle." }, invites: { eligible: true, canCreateInvites: true, arm: "treatment" } } };
+    return { status: 200, json: { activities: [listed] } };
+  };
+  vi.stubGlobal("WebSocket", class { close() {} send() {} });
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  const settle = async () => { for (let i = 0; i < 10; i++) await act(async () => {}); };
+  try {
+    await act(async () => root.render(createElement(SessionProvider, { transport, children: createElement(App) })));
+    await settle();
+    expect(container.textContent).toContain("Back to Explore");
+    expect(new URLSearchParams(location.search).get("page")).toBe("explore");
+  } finally { await act(async () => root.unmount()); container.remove(); localStorage.clear(); vi.unstubAllGlobals(); }
+});
