@@ -82,3 +82,17 @@ export const COUNTRIES = [
 export function countryName(code: string): string {
   return COUNTRIES.find(([value]) => value === code)?.[1] ?? code;
 }
+
+const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+function offsetName(instant: string, timezone: string): string {
+  const name = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, timeZoneName: "shortOffset" })
+    .formatToParts(new Date(instant))
+    .find((part) => part.type === "timeZoneName")?.value ?? timezone;
+  return name === "GMT+0" || name === "UTC" ? "GMT" : name;
+}
+
+export function zoneOffsetLabel(instant: string, timezone: string, viewer: string = viewerZone): string | null {
+  const activity = offsetName(instant, timezone);
+  return activity === offsetName(instant, viewer) ? null : activity;
+}

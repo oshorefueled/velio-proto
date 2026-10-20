@@ -126,6 +126,7 @@ export function App(): ReactNode {
         </nav>
         <div className="nav-side">
           <AccountSelector onSelect={chooseAccount} onSignIn={() => setIdentityPrompt(true)} />
+          {ready && <span className="nav-divider" aria-hidden="true" />}
           {ready && <button type="button" className="button-primary publish-action" aria-current={page === "publish" ? "page" : undefined} onClick={() => navigate("publish")}>Publish activity</button>}
         </div>
       </div>

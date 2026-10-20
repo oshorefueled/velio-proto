@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chipDateRange, chipDateTime, countryName, durationLabel, hostStatus, initials, zoneLabel } from "./present.js";
+import { chipDateRange, chipDateTime, countryName, durationLabel, hostStatus, initials, zoneLabel, zoneOffsetLabel } from "./present.js";
 import { formatMoneyCompact } from "./money.js";
 
 // Revamp mockups 1–4: presentation derivations shared by the redesigned
@@ -68,6 +68,20 @@ describe("durationLabel", () => {
     expect(durationLabel("2026-10-25T00:30:00Z", "2026-10-25T04:00:00Z")).toBe("3 h 30 min");
     expect(durationLabel("2026-10-22T17:30:00Z", "2026-10-22T18:15:00Z")).toBe("45 min");
     expect(durationLabel("2026-10-22T17:30:00Z", "2026-10-22T18:30:00Z")).toBe("1 hour");
+  });
+});
+
+describe("zoneOffsetLabel", () => {
+  it("shows nothing when the activity's offset matches the viewer's at that moment", () => {
+    expect(zoneOffsetLabel("2026-10-22T17:30:00Z", "Europe/London", "Europe/London")).toBeNull();
+    expect(zoneOffsetLabel("2026-10-22T17:30:00Z", "Africa/Lagos", "Europe/London")).toBeNull();
+  });
+
+  it("names the activity's offset at its own date when it differs", () => {
+    expect(zoneOffsetLabel("2026-10-22T17:30:00Z", "Africa/Lagos", "America/New_York")).toBe("GMT+1");
+    expect(zoneOffsetLabel("2026-12-10T17:30:00Z", "Africa/Lagos", "Europe/London")).toBe("GMT+1");
+    expect(zoneOffsetLabel("2026-12-10T17:30:00Z", "UTC", "Africa/Lagos")).toBe("GMT");
+    expect(zoneOffsetLabel("2026-10-22T17:30:00Z", "Asia/Kolkata", "Europe/London")).toBe("GMT+5:30");
   });
 });
 

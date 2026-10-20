@@ -306,7 +306,7 @@ it("when a live booking frame is newer, the host sees updated spots and particip
       },
     };
   });
-  expect(document.body.textContent).toContain("1 booked · 3 remaining of 4");
+  expect(document.body.textContent).toContain("Bookings closed · 1 booked");
   expect(document.body.textContent).toContain("Private Booker");
   const socket = ScriptedLiveSocket.instances.at(-1)!;
   await act(async () => socket.open());
@@ -328,7 +328,7 @@ it("when a live booking frame is newer, the host sees updated spots and particip
     }),
   );
   await settle();
-  expect(document.body.textContent).toContain("2 booked · 2 remaining of 4");
+  expect(document.body.textContent).toContain("Bookings closed · 2 booked");
   expect(document.body.textContent).toContain("Participants (2)");
   expect(document.body.textContent).toContain("Late Booker");
   expect(acks).toHaveLength(1);
@@ -337,7 +337,7 @@ it("when a live booking frame is newer, the host sees updated spots and particip
     source: "websocket",
     appliedEventId: "e1e1e1e1-e1e1-4e1e-8e1e-e1e1e1e1e1e1",
   });
-  expect(acks[0].dom).toContain("2 booked · 2 remaining of 4");
+  expect(acks[0].dom).toContain("Bookings closed · 2 booked");
 });
 
 it("when a booking arrives before the initial participant response, the host refreshes that list to the displayed version", async () => {
@@ -366,7 +366,7 @@ it("when a booking arrives before the initial participant response, the host ref
   await settle();
   await act(async () => socket.receive({ type: "availability", activityId: "a", version: "2", remainingSpots: 2, eventId: null }));
   await settle();
-  expect(document.body.textContent).toContain("2 booked · 2 remaining of 4");
+  expect(document.body.textContent).toContain("Bookings closed · 2 booked");
   await act(async () => initialParticipants.resolve({ status: 200, json: {
     activityId: "a", planId: "plan-a", confirmedCount: 1,
     participants: [{ userId: "old", displayName: "Original Participant" }],

@@ -19,10 +19,12 @@ export function AccountSelector({ onSelect, onSignIn }: {
     if (account !== "Guest") void store.establish({ email: `${account.toLowerCase()}@velio.test` });
   }
   return <div className="account-access">
-    <span className="demo-label">Demo account</span>
-    <div className="tool-toggle" role="group" aria-label="Demo account">
+    <span className="nav-divider" aria-hidden="true" />
+    <span className="demo-label">Active account</span>
+    <div className="tool-toggle" role="group" aria-label="Active account">
       {(["Host", "Booker", "Guest"] as const).map(account => <button key={account} type="button" aria-pressed={selected === account} className={selected === account ? "toggle-on" : ""} onClick={() => select(account)}>{account}</button>)}
     </div>
+    <span className="nav-divider" aria-hidden="true" />
     {user ? <span className="account-viewing"><PersonIcon /> Viewing as {user.displayName} <button type="button" className="button-ghost" onClick={() => select("Guest")}>Sign out</button></span>
       : selected === "Guest" ? <button type="button" className="button-ghost" onClick={onSignIn}>Sign in</button>
         : <span className="hint" role="status">Opening account…</span>}

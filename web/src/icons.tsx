@@ -33,6 +33,12 @@ export const CalendarIcon = (): ReactNode =>
 export const ClockIcon = (): ReactNode =>
   svg([createElement("circle", { key: "c", cx: 12, cy: 12, r: 9 }), createElement("path", { key: "p", d: "M12 7v5l3 2" })]);
 
+export const TagIcon = (): ReactNode =>
+  svg([
+    createElement("path", { key: "p", d: "M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9z" }),
+    createElement("circle", { key: "c", cx: 8, cy: 8, r: 1.5 }),
+  ]);
+
 export const PersonIcon = ({ size = 14 }: { size?: number }): ReactNode =>
   svg([createElement("circle", { key: "c", cx: 12, cy: 8, r: 4 }), createElement("path", { key: "p", d: "M4 21c1.5-4 5-5.5 8-5.5s6.5 1.5 8 5.5" })], size);
 

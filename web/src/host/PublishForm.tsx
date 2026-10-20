@@ -3,17 +3,8 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { ApiError, type ActivityView } from "../api.js";
 import { localWallToUtcInstant, isValidTimeZone } from "../schedule.js";
 import { useSession } from "../session.js";
-import { InfoIcon } from "../icons.js";
-import { COUNTRIES } from "../present.js";
-
-/**
- * Host publication form (issue #14), revamped to the two numbered sections
- * of the mockup. All input is retained on validation or network failure;
- * server field errors land next to their inputs; submission is disabled
- * while pending. The character counters inform without capping: the API
- * sets no length limit. A successful publication selects the new activity —
- * the actual response's activity id, never a guessed one.
- */
+import { CalendarIcon, ClockIcon, GlobeIcon, GroupIcon, InfoIcon, TagIcon } from "../icons.js";
+import { COUNTRIES, zoneLabel } from "../present.js";
 
 const CURRENCIES = ["NGN", "EUR", "USD", "GBP", "SEK", "JPY", "KWD"] as const;
 const CURRENCY_NAMES: Record<(typeof CURRENCIES)[number], string> = {
@@ -47,6 +38,18 @@ function defaultLocalParts(): { date: string; time: string; endTime: string } {
   };
 }
 
+function parseAmount(text: string): number {
+  const plain = text.replaceAll(",", "").trim();
+  return plain === "" ? NaN : Number(plain);
+}
+
+function formatAmount(text: string, digits: number): string {
+  const amount = parseAmount(text);
+  if (!Number.isFinite(amount) || amount < 0) return text;
+  const whole = Number.isInteger(amount);
+  return new Intl.NumberFormat("en-GB", { minimumFractionDigits: whole ? 0 : digits, maximumFractionDigits: digits }).format(amount);
+}
+
 function nextDay(date: string): string {
   const day = new Date(`${date}T00:00:00Z`);
   day.setUTCDate(day.getUTCDate() + 1);
@@ -63,7 +66,7 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
   const [wall, setWall] = useState(defaultLocalParts);
   const [timeZone, setTimeZone] = useState(browserZone);
   const [spots, setSpots] = useState("4");
-  const [priceMinorUnits, setPriceMinorUnits] = useState("15.00");
+  const [priceMinorUnits, setPriceMinorUnits] = useState("15");
   const [currency, setCurrency] = useState<(typeof CURRENCIES)[number]>("GBP");
   const [country, setCountry] = useState<string>("GB");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -103,7 +106,7 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
     const spotsNumber = Number(spots);
     if (!Number.isInteger(spotsNumber) || spotsNumber < 1) errors.spots = "Spots must be a whole number of at least 1.";
     const digits = currencyDigits(currency);
-    const amount = priceMinorUnits.trim() === "" ? NaN : Number(priceMinorUnits);
+    const amount = parseAmount(priceMinorUnits);
     const scaled = amount * 10 ** digits;
     const priceNumber = Math.round(scaled);
     if (!Number.isSafeInteger(priceNumber) || amount < 0 || Math.abs(scaled - priceNumber) > 0.000001) errors.priceMinorUnits = `Enter a nonnegative amount with at most ${digits} decimal places.`;
@@ -135,7 +138,6 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
         if (err.fields !== undefined) setFieldErrors(err.fields);
         setFormError(err.message);
       } else {
-        // Network failure: every entered value is retained for a retry.
         setFormError(err instanceof Error ? err.message : "Could not reach the API — your draft is kept.");
       }
     } finally {
@@ -145,7 +147,7 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
 
 
   return (
-    <section className="panel publish-panel" aria-labelledby="publish-heading">
+    <section className="publish-page" aria-labelledby="publish-heading">
       <div className="breadcrumb">
         <span>My activities</span>
         <span aria-hidden="true">/</span>
@@ -153,7 +155,7 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
       </div>
       <h1 id="publish-heading" className="detail-title">Publish an activity</h1>
       <p className="page-sub">Create a plan people can discover and book.</p>
-      <form onSubmit={(event) => void submit(event)} noValidate>
+      <form className="panel publish-card" onSubmit={(event) => void submit(event)} noValidate>
         <div className="form-section">
           <div className="form-section-head">
             <span className="section-num">1</span>
@@ -162,30 +164,43 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
               <p className="section-sub">Tell guests what to expect.</p>
             </div>
           </div>
-          <label htmlFor="pub-title">Title</label>
-          <input
-            id="pub-title"
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            aria-invalid={fieldErrors.title !== undefined}
-            aria-describedby={fieldErrors.title !== undefined ? "pub-title-error" : undefined}
-          />
-          {fieldErrors.title !== undefined && (
-            <p className="field-error" id="pub-title-error" role="alert">{fieldErrors.title}</p>
-          )}
-
-          <label htmlFor="pub-description">Description</label>
-          <div className="field-with-count">
-            <textarea id="pub-description" value={description} onChange={event => setDescription(event.target.value)} aria-invalid={!!fieldErrors.description} aria-describedby="pub-description-error" />
-            <span className="field-count">{description.length} characters</span>
+          <div className="form-section-body">
+            <div className="field-line">
+              <label htmlFor="pub-title">Title</label>
+              <div>
+                <input
+                  id="pub-title"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  aria-invalid={fieldErrors.title !== undefined}
+                  aria-describedby={fieldErrors.title !== undefined ? "pub-title-error" : undefined}
+                />
+                {fieldErrors.title !== undefined && (
+                  <p className="field-error" id="pub-title-error" role="alert">{fieldErrors.title}</p>
+                )}
+              </div>
+            </div>
+            <div className="field-line">
+              <label htmlFor="pub-description">Description</label>
+              <div>
+                <div className="field-with-count">
+                  <textarea id="pub-description" value={description} onChange={event => setDescription(event.target.value)} aria-invalid={!!fieldErrors.description} aria-describedby="pub-description-error" />
+                  <span className="field-count">{description.length} characters</span>
+                </div>
+                {fieldErrors.description && <p id="pub-description-error" className="field-error" role="alert">{fieldErrors.description}</p>}
+              </div>
+            </div>
+            <div className="field-line">
+              <label htmlFor="pub-itinerary">Itinerary</label>
+              <div>
+                <div className="field-with-count">
+                  <textarea id="pub-itinerary" className="textarea-tall" value={itinerary} onChange={event => setItinerary(event.target.value)} aria-invalid={!!fieldErrors.itinerary} aria-describedby="pub-itinerary-error" />
+                  <span className="field-count">{itinerary.length} characters</span>
+                </div>
+                {fieldErrors.itinerary && <p id="pub-itinerary-error" className="field-error" role="alert">{fieldErrors.itinerary}</p>}
+              </div>
+            </div>
           </div>
-          {fieldErrors.description && <p id="pub-description-error" className="field-error" role="alert">{fieldErrors.description}</p>}
-          <label htmlFor="pub-itinerary">Itinerary</label>
-          <div className="field-with-count">
-            <textarea id="pub-itinerary" value={itinerary} onChange={event => setItinerary(event.target.value)} aria-invalid={!!fieldErrors.itinerary} aria-describedby="pub-itinerary-error" />
-            <span className="field-count">{itinerary.length} characters</span>
-          </div>
-          {fieldErrors.itinerary && <p id="pub-itinerary-error" className="field-error" role="alert">{fieldErrors.itinerary}</p>}
         </div>
 
         <div className="form-section">
@@ -196,112 +211,127 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
               <p className="section-sub">Choose when it happens and how guests can book.</p>
             </div>
           </div>
-          <div className="form-grid-3">
-            <div>
-              <label htmlFor="pub-date">Date</label>
-              <input
-                id="pub-date"
-                type="date"
-                value={wall.date}
-                onChange={(event) => setWall(previous => ({ ...previous, date: event.target.value }))}
-                aria-invalid={fieldErrors.startsAt !== undefined}
-                aria-describedby={fieldErrors.startsAt !== undefined ? "pub-starts-error" : undefined}
-              />
+          <div className="form-section-body">
+            <div className="form-grid-3">
+              <div>
+                <label htmlFor="pub-date">Date</label>
+                <span className="input-icon"><CalendarIcon />
+                  <input
+                    id="pub-date"
+                    type="date"
+                    value={wall.date}
+                    onChange={(event) => setWall(previous => ({ ...previous, date: event.target.value }))}
+                    aria-invalid={fieldErrors.startsAt !== undefined}
+                    aria-describedby={fieldErrors.startsAt !== undefined ? "pub-starts-error" : undefined}
+                  />
+                </span>
+              </div>
+              <div>
+                <label htmlFor="pub-time">Start time</label>
+                <span className="input-icon"><ClockIcon />
+                  <input
+                    id="pub-time"
+                    type="time"
+                    value={wall.time}
+                    onChange={(event) => setWall(previous => ({ ...previous, time: event.target.value }))}
+                    aria-invalid={fieldErrors.startsAt !== undefined}
+                    aria-describedby={fieldErrors.startsAt !== undefined ? "pub-starts-error" : undefined}
+                  />
+                </span>
+              </div>
+              <div>
+                <label htmlFor="pub-end-time">End time</label>
+                <span className="input-icon"><ClockIcon />
+                  <input
+                    id="pub-end-time"
+                    type="time"
+                    value={wall.endTime}
+                    onChange={(event) => setWall(previous => ({ ...previous, endTime: event.target.value }))}
+                    aria-invalid={fieldErrors.endsAt !== undefined}
+                    aria-describedby={fieldErrors.endsAt !== undefined ? "pub-ends-error" : endsNextDay ? "pub-ends-hint" : undefined}
+                  />
+                </span>
+                {endsNextDay && <p className="hint" id="pub-ends-hint">Ends the next day</p>}
+              </div>
             </div>
-            <div>
-              <label htmlFor="pub-time">Start time</label>
-              <input
-                id="pub-time"
-                type="time"
-                value={wall.time}
-                onChange={(event) => setWall(previous => ({ ...previous, time: event.target.value }))}
-                aria-invalid={fieldErrors.startsAt !== undefined}
-                aria-describedby={fieldErrors.startsAt !== undefined ? "pub-starts-error" : undefined}
-              />
-            </div>
-            <div>
-              <label htmlFor="pub-end-time">End time</label>
-              <input
-                id="pub-end-time"
-                type="time"
-                value={wall.endTime}
-                onChange={(event) => setWall(previous => ({ ...previous, endTime: event.target.value }))}
-                aria-invalid={fieldErrors.endsAt !== undefined}
-                aria-describedby={fieldErrors.endsAt !== undefined ? "pub-ends-error" : endsNextDay ? "pub-ends-hint" : undefined}
-              />
-              {endsNextDay && <p className="hint" id="pub-ends-hint">Ends the next day</p>}
-            </div>
-          </div>
-          {fieldErrors.startsAt !== undefined && (
-            <p className="field-error" id="pub-starts-error" role="alert">{fieldErrors.startsAt}</p>
-          )}
-          {fieldErrors.endsAt !== undefined && (
-            <p className="field-error" id="pub-ends-error" role="alert">{fieldErrors.endsAt}</p>
-          )}
+            {fieldErrors.startsAt !== undefined && (
+              <p className="field-error" id="pub-starts-error" role="alert">{fieldErrors.startsAt}</p>
+            )}
+            {fieldErrors.endsAt !== undefined && (
+              <p className="field-error" id="pub-ends-error" role="alert">{fieldErrors.endsAt}</p>
+            )}
 
-          <div className="form-grid-3">
-            <div>
-              <label htmlFor="pub-timezone">Timezone</label>
-              <select id="pub-timezone" value={timeZone} onChange={(event) => setTimeZone(event.target.value)}>
-                {[...new Set([browserZone, ...TIME_ZONES])].map((zone) => (
-                  <option key={zone} value={zone}>{zone}</option>
-                ))}
-              </select>
-              {fieldErrors.timezone && <p className="field-error" role="alert">{fieldErrors.timezone}</p>}
+            <div className="form-grid-3">
+              <div>
+                <label htmlFor="pub-timezone">Timezone</label>
+                <span className="input-icon"><GlobeIcon />
+                  <select id="pub-timezone" value={timeZone} onChange={(event) => setTimeZone(event.target.value)}>
+                    {[...new Set([browserZone, ...TIME_ZONES])].map((zone) => (
+                      <option key={zone} value={zone}>{zoneLabel(zone)}</option>
+                    ))}
+                  </select>
+                </span>
+                {fieldErrors.timezone && <p className="field-error" role="alert">{fieldErrors.timezone}</p>}
+              </div>
+              <div>
+                <label htmlFor="pub-country">Country</label>
+                <span className="input-icon"><GlobeIcon />
+                  <select id="pub-country" value={country} onChange={(event) => setCountry(event.target.value)}>
+                    {COUNTRIES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+                    <option value="">Not specified</option>
+                  </select>
+                </span>
+                {fieldErrors.country && <p className="field-error" role="alert">{fieldErrors.country}</p>}
+              </div>
             </div>
-            <div>
-              <label htmlFor="pub-country">Country</label>
-              <select id="pub-country" value={country} onChange={(event) => setCountry(event.target.value)}>
-                {COUNTRIES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-                <option value="">Not specified</option>
-              </select>
-              {fieldErrors.country && <p className="field-error" role="alert">{fieldErrors.country}</p>}
-            </div>
-          </div>
 
-          <div className="form-grid-3">
-            <div>
-              <label htmlFor="pub-spots">Spots available</label>
-              <input
-                id="pub-spots"
-                type="number"
-                min={1}
-                step={1}
-                value={spots}
-                onChange={(event) => setSpots(event.target.value)}
-                aria-invalid={fieldErrors.spots !== undefined}
-                aria-describedby={fieldErrors.spots !== undefined ? "pub-spots-error" : undefined}
-              />
+            <div className="form-grid-3">
+              <div>
+                <label htmlFor="pub-spots">Spots available</label>
+                <span className="input-icon"><GroupIcon />
+                  <input
+                    id="pub-spots"
+                    type="text"
+                    inputMode="numeric"
+                    value={spots}
+                    onChange={(event) => setSpots(event.target.value)}
+                    aria-invalid={fieldErrors.spots !== undefined}
+                    aria-describedby={fieldErrors.spots !== undefined ? "pub-spots-error" : undefined}
+                  />
+                </span>
+              </div>
+              <div>
+                <label htmlFor="pub-price">Price per person</label>
+                <span className="input-icon"><TagIcon />
+                  <input
+                    id="pub-price"
+                    type="text"
+                    inputMode="decimal"
+                    value={priceMinorUnits}
+                    onChange={(event) => setPriceMinorUnits(event.target.value)}
+                    onBlur={() => setPriceMinorUnits(text => formatAmount(text, currencyDigits(currency)))}
+                    aria-invalid={fieldErrors.priceMinorUnits !== undefined}
+                    aria-describedby={fieldErrors.priceMinorUnits !== undefined ? "pub-price-error" : undefined}
+                  />
+                </span>
+              </div>
+              <div>
+                <label htmlFor="pub-currency">Currency</label>
+                <select id="pub-currency" value={currency} onChange={(event) => setCurrency(event.target.value as typeof currency)}>
+                  {CURRENCIES.map((code) => (
+                    <option key={code} value={code}>{code} — {CURRENCY_NAMES[code]}</option>
+                  ))}
+                </select>
+                {fieldErrors.currency && <p className="field-error" role="alert">{fieldErrors.currency}</p>}
+              </div>
             </div>
-            <div>
-              <label htmlFor="pub-price">Price per person</label>
-              <input
-                id="pub-price"
-                type="number"
-                min={0}
-                step="any"
-                value={priceMinorUnits}
-                onChange={(event) => setPriceMinorUnits(event.target.value)}
-                aria-invalid={fieldErrors.priceMinorUnits !== undefined}
-                aria-describedby={fieldErrors.priceMinorUnits !== undefined ? "pub-price-error" : undefined}
-              />
-            </div>
-            <div>
-              <label htmlFor="pub-currency">Currency</label>
-              <select id="pub-currency" value={currency} onChange={(event) => setCurrency(event.target.value as typeof currency)}>
-                {CURRENCIES.map((code) => (
-                  <option key={code} value={code}>{code} — {CURRENCY_NAMES[code]}</option>
-                ))}
-              </select>
-              {fieldErrors.currency && <p className="field-error" role="alert">{fieldErrors.currency}</p>}
-            </div>
+            {fieldErrors.spots !== undefined && (
+              <p className="field-error" id="pub-spots-error" role="alert">{fieldErrors.spots}</p>
+            )}
+            {fieldErrors.priceMinorUnits !== undefined && (
+              <p className="field-error" id="pub-price-error" role="alert">{fieldErrors.priceMinorUnits}</p>
+            )}
           </div>
-          {fieldErrors.spots !== undefined && (
-            <p className="field-error" id="pub-spots-error" role="alert">{fieldErrors.spots}</p>
-          )}
-          {fieldErrors.priceMinorUnits !== undefined && (
-            <p className="field-error" id="pub-price-error" role="alert">{fieldErrors.priceMinorUnits}</p>
-          )}
         </div>
 
         {formError !== null && (
