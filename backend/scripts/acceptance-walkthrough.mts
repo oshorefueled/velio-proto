@@ -366,11 +366,11 @@ export async function runWalkthrough(options: { databaseUrl?: string; migrationU
     // 15. Metrics snapshot (technical health, aggregate only).
     const metrics = await call("metrics-snapshot", "GET", "/metrics");
 
-    // All four public CLI commands, against the same isolated data.
+    // All five public CLI commands, against the same isolated data.
     const cohortStart = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     const cohortEnd = new Date(Date.parse(cohortStart) + 7 * 24 * 3600 * 1000).toISOString();
     const asOf = new Date(Date.parse(cohortEnd) + 2 * 24 * 3600 * 1000).toISOString();
-    for (const name of ["inviter_adoption", "invite_conversion", "k_factor_by_rail", "plan_completion_by_arm"] satisfies CohortQueryName[]) {
+    for (const name of ["inviter_adoption", "invite_conversion", "k_factor_by_rail", "holdout_comparison", "acquisition_audit"] satisfies CohortQueryName[]) {
       const output = execFileSync(process.execPath, ["--import", "tsx", resolve(dirname(fileURLToPath(import.meta.url)), "cohorts.mts"), name,
         "--start", cohortStart, "--end", cohortEnd, "--as-of", asOf, "--dataset", "demo"], {
         env: { ...process.env, DATABASE_URL: appUrl }, encoding: "utf8", timeout: 30000,

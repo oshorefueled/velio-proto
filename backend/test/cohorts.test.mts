@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import { createPool } from "../src/db/pool.ts";
-import { runCohortQuery, validateCohortInputs, type CohortInputs } from "../scripts/cohorts.mts";
+import { poissonInterval, runCohortQuery, validateCohortInputs, type CohortInputs } from "../scripts/cohorts.mts";
 import { clearIdentityData, resetAndMigrate, urlFor } from "./support/db.mts";
 
 const migrationUrl = urlFor("MIGRATION_DATABASE_URL", "velio_test");
@@ -342,8 +342,9 @@ describe("open-to-claim conversion", () => {
     const v1 = randomVisitor();
     // Returning guest: two displayed opens before identity completion.
     await insertEvent(pool, { name: "invite_opened", visitorId: v1, inviteId: iv1, channel: "web", outcome: "available", occurredAt: T("2026-01-20T08:00:00Z") });
-    await insertEvent(pool, { name: "invite_opened", visitorId: v1, inviteId: iv1, channel: "web", outcome: "available", occurredAt: T("2026-01-21T09:00:00Z") });
-    await exec(pool, "INSERT INTO visitor_identities (visitor_id, user_id, channel, created_at) VALUES ($1, $2, 'web', '2026-01-24T00:00:00Z')", [v1, g1]);
+    // Account entry on the same device links the earlier anonymous open (C6).
+    await insertEvent(pool, { name: "account_entry_completed", userId: g1, visitorId: v1, occurredAt: T("2026-01-21T05:00:00Z") });
+    await insertEvent(pool, { name: "invite_opened", userId: g1, visitorId: v1, inviteId: iv1, channel: "web", outcome: "available", occurredAt: T("2026-01-21T09:00:00Z") });
     const b1 = await insertBooking(pool, { activityId: act4.activityId, planId: act4.planId, userId: g1, createdAt: T("2026-01-21T06:00:00Z") });
     await attributeClaim(b1, iv1, T("2026-01-21T06:00:00Z"));
     // The redeemed invite converts once; a replayed claim event adds nothing.
@@ -363,7 +364,7 @@ describe("open-to-claim conversion", () => {
     await insertEvent(pool, { name: "invite_opened", visitorId: v4, inviteId: ive, channel: "web", outcome: "expired", occurredAt: T("2026-01-21T09:00:00Z") });
 
     // A different invite redeemed by the same person is its own opportunity.
-    await insertEvent(pool, { name: "invite_opened", visitorId: v1, inviteId: iv2, channel: "web", outcome: "available", occurredAt: T("2026-01-23T08:00:00Z") });
+    await insertEvent(pool, { name: "invite_opened", userId: g1, visitorId: v1, inviteId: iv2, channel: "web", outcome: "available", occurredAt: T("2026-01-23T08:00:00Z") });
     const b2 = await insertBooking(pool, { activityId: otherActivity.activityId, planId: otherActivity.planId, userId: g1, createdAt: T("2026-01-23T15:00:00Z") });
     await attributeClaim(b2, iv2, T("2026-01-23T15:00:00Z"));
     await insertEvent(pool, { name: "spot_claimed", userId: g1, inviteId: iv2, bookingId: b2, occurredAt: T("2026-01-23T15:30:00Z") });
@@ -371,9 +372,8 @@ describe("open-to-claim conversion", () => {
     // Identity-to-claim drop-off: explicit claim action, no committed claim.
     const v5 = randomVisitor();
     await insertEvent(pool, { name: "invite_opened", visitorId: v5, inviteId: iv2, channel: "web", outcome: "available", occurredAt: T("2026-01-24T08:00:00Z") });
-    await exec(pool, "INSERT INTO visitor_identities (visitor_id, user_id, channel, created_at) VALUES ($1, $2, 'web', '2026-01-24T00:00:00Z')", [v5, g2]);
     await insertEvent(pool, { name: "claim_started", visitorId: v5, inviteId: iv2, occurredAt: T("2026-01-24T10:00:00Z") });
-    await insertEvent(pool, { name: "account_entry_completed", userId: g2, occurredAt: T("2026-01-24T10:01:00Z") });
+    await insertEvent(pool, { name: "account_entry_completed", userId: g2, visitorId: v5, occurredAt: T("2026-01-24T10:01:00Z") });
     await insertEvent(pool, { name: "booking_attempted", userId: g2, activityId: otherActivity.activityId, occurredAt: T("2026-01-24T10:02:00Z"), details: { source: "public_share", outcome: "failed" } });
 
     const report = await run("invite_conversion", { start, end, asOf });
@@ -385,7 +385,8 @@ describe("open-to-claim conversion", () => {
     expect(Number(total.conversion_rate)).toBeCloseTo(2 / 6);
     expect(Number(total.closed_landings)).toBe(1);
     expect(Number(total.identity_to_claim_dropoffs)).toBe(1);
-    expect(Number(total.identity_completed_people_in_window)).toBe(1);
+    // g1 and g2 each completed account entry inside their opportunity window.
+    expect(Number(total.identity_completed_people_in_window)).toBe(2);
     expect(Number(total.activity_scoped_claim_error_opportunities)).toBe(1);
     expect(Number(total.target)).toBeCloseTo(0.25);
 
@@ -478,80 +479,75 @@ describe("k factor by rail", () => {
   });
 });
 
-describe("plan completion by arm", () => {
+describe("holdout comparison", () => {
   const start = T("2026-03-02T00:00:00Z");
   const end = T("2026-03-09T00:00:00Z");
   const asOf = T("2026-03-20T00:00:00Z");
 
-  it("counts all assigned cohort activities, separates late completions, and compares arms within a version", async () => {
-    const host = await insertUser(pool, { key: "comp-host", name: "Comp Host", createdAt: T("2025-12-01T00:00:00Z") });
-    const u6 = await insertUser(pool, { key: "comp-u6", name: "U6", createdAt: T("2025-12-01T00:00:00Z") });
-    const u7 = await insertUser(pool, { key: "comp-u7", name: "U7", createdAt: T("2025-12-01T00:00:00Z") });
-    const u8 = await insertUser(pool, { key: "comp-u8", name: "U8", createdAt: T("2025-12-01T00:00:00Z") });
-    const u9 = await insertUser(pool, { key: "comp-u9", name: "U9", createdAt: T("2025-12-01T00:00:00Z") });
+  it("compares booked participants per assigned activity by arm within a version, including activities with no inviter", async () => {
+    const host = await insertUser(pool, { key: "hold-host", name: "Hold Host", createdAt: T("2025-12-01T00:00:00Z") });
+    const person = (k: string) => insertUser(pool, { key: `hold-${k}`, name: k, createdAt: T("2025-12-01T00:00:00Z") });
+    const u6 = await person("u6");
+    const u7 = await person("u7");
+    const u8 = await person("u8");
+    const u9 = await person("u9");
 
-    const act7 = await insertActivity(pool, { hostId: host, title: "Comp Treatment", startsAt: T("2026-03-03T00:00:00Z"), arm: "treatment", experimentVersion: "c-v1" });
-    const act8 = await insertActivity(pool, { hostId: host, title: "Comp Control", startsAt: T("2026-03-04T00:00:00Z"), arm: "control", experimentVersion: "c-v1" });
-    const act9 = await insertActivity(pool, { hostId: host, title: "Comp Late", startsAt: T("2026-03-05T00:00:00Z"), arm: "treatment", experimentVersion: "c-v1" });
-    const act10 = await insertActivity(pool, { hostId: host, title: "Comp Empty Control", startsAt: T("2026-03-06T00:00:00Z"), arm: "control", experimentVersion: "c-v1" });
+    const t1 = await insertActivity(pool, { hostId: host, title: "Hold Treatment", startsAt: T("2026-03-03T00:00:00Z"), arm: "treatment", experimentVersion: "h-v1" });
+    const t2 = await insertActivity(pool, { hostId: host, title: "Hold Treatment 2", startsAt: T("2026-03-05T00:00:00Z"), arm: "treatment", experimentVersion: "h-v1" });
+    const c1 = await insertActivity(pool, { hostId: host, title: "Hold Control", startsAt: T("2026-03-04T00:00:00Z"), arm: "control", experimentVersion: "h-v1" });
+    await insertActivity(pool, { hostId: host, title: "Hold Empty Control", startsAt: T("2026-03-06T00:00:00Z"), arm: "control", experimentVersion: "h-v1" });
     // No saved assignment: excluded from the arm comparison entirely.
-    await insertActivity(pool, { hostId: host, title: "Comp Unassigned", startsAt: T("2026-03-07T00:00:00Z") });
+    await insertActivity(pool, { hostId: host, title: "Hold Unassigned", startsAt: T("2026-03-07T00:00:00Z") });
+    const next = await insertActivity(pool, { hostId: host, title: "Hold New Version", startsAt: T("2026-03-07T00:00:00Z"), arm: "treatment", experimentVersion: "h-v2" });
 
-    await insertBooking(pool, { activityId: act7.activityId, planId: act7.planId, userId: u6, createdAt: T("2026-03-02T10:00:00Z") });
-    await insertBooking(pool, { activityId: act7.activityId, planId: act7.planId, userId: u7, createdAt: T("2026-03-02T11:00:00Z") });
-    await exec(pool, "UPDATE plans SET completed = true, completed_by = $1, completed_at = $2 WHERE activity_id = $3", [host, T("2026-03-03T02:00:00Z"), act7.activityId]);
-    await insertBooking(pool, { activityId: act8.activityId, planId: act8.planId, userId: u6, createdAt: T("2026-03-04T10:00:00Z") });
-    await insertBooking(pool, { activityId: act9.activityId, planId: act9.planId, userId: u9, createdAt: T("2026-03-05T01:00:00Z") });
-    await exec(pool, "UPDATE plans SET completed = true, completed_by = $1, completed_at = $2 WHERE activity_id = $3", [host, T("2026-03-06T06:00:00Z"), act9.activityId]);
+    await insertBooking(pool, { ...t1, userId: u6, createdAt: T("2026-03-02T10:00:00Z") });
+    await insertBooking(pool, { ...t1, userId: u7, createdAt: T("2026-03-02T11:00:00Z") });
+    await insertBooking(pool, { ...t2, userId: u9, createdAt: T("2026-03-04T01:00:00Z") });
+    await insertBooking(pool, { ...c1, userId: u6, createdAt: T("2026-03-03T10:00:00Z") });
+    await insertBooking(pool, { ...next, userId: u8, createdAt: T("2026-03-02T10:00:00Z") });
+    // A booking after as-of is not yet a fact.
+    await insertBooking(pool, { ...t2, userId: u8, createdAt: T("2026-03-25T00:00:00Z") });
+    // Only t1 has a booker who invited.
+    await insertInvite(pool, { ...t1, code: "H0DT1AAAAAAA", rail: "public_share", creatorId: u6, createdAt: T("2026-03-02T12:00:00Z"), expiresAt: T("2026-03-03T00:00:00Z") });
 
-    const visitor = randomVisitor();
-    await insertEvent(pool, { name: "activity_viewed", visitorId: visitor, activityId: act7.activityId, occurredAt: T("2026-03-02T08:00:00Z") });
-    await insertEvent(pool, { name: "activity_viewed", visitorId: visitor, activityId: act8.activityId, occurredAt: T("2026-03-02T09:00:00Z") });
-    await insertEvent(pool, { name: "activity_viewed", userId: u7, activityId: act7.activityId, occurredAt: T("2026-03-02T08:00:00Z") });
-    await insertEvent(pool, { name: "activity_viewed", userId: u7, activityId: act8.activityId, occurredAt: T("2026-03-02T09:00:00Z") });
-    const nextVersion = await insertActivity(pool, { hostId: host, title: "New version treatment", startsAt: T("2026-03-07T00:00:00Z"), arm: "treatment", experimentVersion: "z-v2" });
-    await insertEvent(pool, { name: "activity_viewed", userId: u8, activityId: act8.activityId, occurredAt: T("2026-03-02T09:00:00Z") });
-    await insertBooking(pool, { ...nextVersion, userId: u8, createdAt: "2026-03-02T10:00:00Z" });
-    await pool.query("UPDATE plans SET completed=true,completed_by=$1,completed_at='2026-03-08T00:00:00Z' WHERE activity_id=$2", [host,nextVersion.activityId]);
-    await insertEvent(pool, { name: "activity_viewed", userId: u8, activityId: nextVersion.activityId, occurredAt: T("2026-03-02T10:00:00Z") });
-    await insertEvent(pool, { name: "activity_viewed", activityId: nextVersion.activityId, occurredAt: T("2026-03-02T10:01:00Z") });
-    const report = await run("plan_completion_by_arm", { start, end, asOf });
+    // u7 saw the control arm anonymously, signed in, then saw treatment:
+    // one person with mixed exposure.
+    const device = randomVisitor();
+    await insertEvent(pool, { name: "activity_viewed", visitorId: device, activityId: c1.activityId, occurredAt: T("2026-03-02T08:00:00Z") });
+    await insertEvent(pool, { name: "account_entry_completed", userId: u7, visitorId: device, occurredAt: T("2026-03-02T08:30:00Z") });
+    await insertEvent(pool, { name: "activity_viewed", userId: u7, visitorId: device, activityId: t1.activityId, occurredAt: T("2026-03-02T09:00:00Z") });
+    // An exposure with neither account nor device stays visible as unknown.
+    await insertEvent(pool, { name: "activity_viewed", activityId: t2.activityId, occurredAt: T("2026-03-02T09:30:00Z") });
+
+    const report = await run("holdout_comparison", { start, end, asOf });
     expect(report.mature).toBe(true);
     const rows = report.results[0]!;
-    const treatment = rows.find((r) => r.arm === "treatment")!;
-    const control = rows.find((r) => r.arm === "control")!;
+    const treatment = rows.find((r) => r.experiment_version === "h-v1" && r.arm === "treatment")!;
+    const control = rows.find((r) => r.experiment_version === "h-v1" && r.arm === "control")!;
     expect(Number(treatment.activities)).toBe(2);
-    expect(Number(treatment.completed_in_window)).toBe(1);
-    expect(Number(treatment.completed_late)).toBe(1);
-    expect(Number(treatment.confirmed_bookers)).toBe(3);
-    expect(Number(treatment.completion_rate)).toBeCloseTo(0.5);
-    expect(Number(treatment.absolute_difference_vs_control)).toBeCloseTo(0.5);
+    expect(Number(treatment.booked_participants)).toBe(3);
+    expect(Number(treatment.booked_participants_per_activity)).toBeCloseTo(1.5);
+    expect(Number(treatment.activities_without_inviter)).toBe(1);
     expect(Number(control.activities)).toBe(2);
-    expect(Number(control.completed_in_window)).toBe(0);
-    expect(Number(control.confirmed_bookers)).toBe(1);
-    expect(Number(control.completion_rate)).toBe(0);
-    expect(Number(control.absolute_difference_vs_control)).toBe(0);
-    expect(Number(treatment.mixed_arm_exposed_people)).toBe(2);
-    const next = rows.find(r => r.experiment_version === "z-v2")!;
-    expect(Number(next.mixed_arm_exposed_people)).toBe(0);
-    expect(Number(next.completed_in_window)).toBe(1);
-    expect(Number(next.completed_late)).toBe(0);
-    expect(Number(next.unknown_identity_exposures)).toBe(1);
-    expect(next.absolute_difference_vs_control).toBeNull();
-    expect(Number(treatment.completion_rate_ci_low)).toBeCloseTo(0.09453, 4);
-    expect(Number(treatment.completion_rate_ci_high)).toBeCloseTo(0.90547, 4);
-    expect(Number(treatment.activities_without_recorded_exposure)).toBe(1);
+    expect(Number(control.booked_participants_per_activity)).toBeCloseTo(0.5);
+    expect(Number(control.activities_without_inviter)).toBe(2);
+    expect(Number(treatment.difference_vs_control)).toBeCloseTo(1);
+    expect(treatment.difference_ci_low).not.toBeNull();
+    expect(Number(treatment.difference_ci_low)).toBeLessThan(1);
+    expect(Number(treatment.difference_ci_high)).toBeGreaterThan(1);
+    expect(Number(treatment.mixed_arm_exposed_people)).toBe(1);
+    expect(Number(treatment.unknown_identity_exposures)).toBe(1);
+    expect(Number(control.recorded_exposed_people)).toBe(1);
+    expect(treatment.actual_occurrence).toBe("unmeasured");
+    const v2 = rows.find((r) => r.experiment_version === "h-v2")!;
+    expect(Number(v2.activities)).toBe(1);
+    expect(v2.difference_vs_control).toBeNull(); // no control arm in that version
+    expect(v2.booked_participants_ci_low).toBeNull(); // one activity: no spread
 
-    // Immature: the as-of clock before cohort end + 24h leaves the fixed
-    // window open, and the report says so instead of calling it complete.
-    const immature = await run("plan_completion_by_arm", {
-      start,
-      end,
-      asOf: T("2026-03-09T12:00:00Z"),
-    });
+    // Before the cohort's activities have all started, bookings are still open.
+    const immature = await run("holdout_comparison", { start, end, asOf: T("2026-03-08T12:00:00Z") });
     expect(immature.mature).toBe(false);
     expect(immature.remainingObservationHours).toBeCloseTo(12);
-    expect(immature.results[0]![0]!.mature).toBe(false);
   });
 });
 
@@ -574,7 +570,7 @@ describe("empty and immature cohorts", () => {
     expect(Number(conversion.results[0]![0]!.opportunities)).toBe(0);
     expect(conversion.results[0]![0]!.conversion_rate).toBeNull();
 
-    const completion = await run("plan_completion_by_arm", {
+    const completion = await run("holdout_comparison", {
       start: T("2026-06-01T00:00:00Z"),
       end: T("2026-06-08T00:00:00Z"),
       asOf: T("2026-07-01T00:00:00Z"),
@@ -655,14 +651,15 @@ describe("as-of facts and dataset boundaries", () => {
     expect(Number(report.results[0]!.find(r => r.rail === "public_share")!.acquired_users)).toBe(0);
   });
 
-  it("when control is absent and completion is later than as-of, comparison stays unknown and completion is excluded", async () => {
+  it("when control is absent and a booking is later than as-of, comparison stays unknown and the booking is excluded", async () => {
     const host = await insertUser(pool, { key: "alone-host", name: "Host", createdAt: "2027-01-01T00:00:00Z" });
-    const a = await insertActivity(pool, { hostId: host, title: "Alone", startsAt: "2027-05-02T00:00:00Z", arm: "treatment", experimentVersion: "alone" });
-    await pool.query("UPDATE plans SET completed=true,completed_by=$1,completed_at='2027-05-02T12:00:00Z' WHERE activity_id=$2", [host,a.activityId]);
-    const report = await run("plan_completion_by_arm", { start: "2027-05-01T00:00:00Z", end: "2027-05-08T00:00:00Z", asOf: "2027-05-02T10:00:00Z" });
+    const guest = await insertUser(pool, { key: "alone-guest", name: "Guest", createdAt: "2027-01-01T00:00:00Z" });
+    const a = await insertActivity(pool, { hostId: host, title: "Alone", startsAt: "2027-05-03T00:00:00Z", arm: "treatment", experimentVersion: "alone" });
+    await insertBooking(pool, { ...a, userId: guest, createdAt: "2027-05-02T12:00:00Z" });
+    const report = await run("holdout_comparison", { start: "2027-05-01T00:00:00Z", end: "2027-05-08T00:00:00Z", asOf: "2027-05-02T10:00:00Z" });
     const row = report.results[0]![0]!;
-    expect(Number(row.completed_in_window)).toBe(0);
-    expect(row.absolute_difference_vs_control).toBeNull();
+    expect(Number(row.booked_participants)).toBe(0);
+    expect(row.difference_vs_control).toBeNull();
   });
 
   it("when application credentials set or change dataset labels, PostgreSQL refuses them and accepts ordinary defaults", async () => {
@@ -698,8 +695,8 @@ it("when anonymous opens precede the cohort or lead to a started activity, conve
   const i = await insertInvite(pool, { ...a, code: "B0VNDARYAAAA", rail: "vouch", creatorId: h, createdAt: "2027-06-01T00:00:00Z", expiresAt: "2027-07-01T00:00:00Z", targetContactKey: "boundary-u" });
   const v = randomVisitor();
   await insertEvent(pool, { name: "invite_opened", visitorId: v, inviteId: i, channel: "flutter", outcome: "available", occurredAt: "2027-06-30T08:00:00Z" });
+  await insertEvent(pool, { name: "account_entry_completed", userId: u, visitorId: v, occurredAt: "2027-06-30T09:00:00Z" });
   await insertEvent(pool, { name: "invite_opened", visitorId: v, userId: u, inviteId: i, channel: "flutter", outcome: "expired", occurredAt: "2027-07-02T08:00:00Z" });
-  await pool.query("INSERT INTO visitor_identities (visitor_id,user_id,created_at) VALUES ($1,$2,'2027-07-02T08:00:00Z')", [v,u]);
   await insertEvent(pool, { name: "invite_opened", visitorId: randomVisitor(), inviteId: i, channel: "flutter", outcome: "expired", occurredAt: "2027-07-03T08:00:00Z" });
   const report = await run("invite_conversion", { start: "2027-07-01T00:00:00Z", end: "2027-07-08T00:00:00Z", asOf: "2027-07-09T00:00:00Z" });
   const total = report.results[0]!.find(r => r.segment === "total")!;
@@ -736,11 +733,10 @@ it("when every fixture fact is labeled demo, all real reports exclude it and exp
   const u = await insertUser(pool, { key: "all-demo-u", name: "Acquired", dataset: "demo", createdAt: "2027-09-02T08:30:00Z", signupSource: "public_share", generation: 1, signupInviteId: i });
   const v = randomVisitor();
   await insertEvent(pool, { name: "invite_opened", visitorId: v, inviteId: i, activityId: a.activityId, channel: "web", outcome: "available", occurredAt: "2027-09-02T08:00:00Z" });
-  await pool.query("INSERT INTO visitor_identities(visitor_id,user_id,created_at) VALUES ($1,$2,'2027-09-02T08:30:00Z')", [v,u]);
+  await insertEvent(pool, { name: "account_entry_completed", userId: u, visitorId: v, occurredAt: "2027-09-02T08:30:00Z" });
   const b = await insertBooking(pool, { ...a, userId: u, createdAt: "2027-09-02T09:00:00Z" });
   await attributeClaim(b,i,"2027-09-02T09:00:00Z");
   await insertInvite(pool, { ...a, code: "A11DEM0BBBBB", rail: "vouch", creatorId: u, targetContactKey: "demo-next", createdAt: "2027-09-02T10:00:00Z", expiresAt: "2027-09-03T00:00:00Z" });
-  await pool.query("UPDATE plans SET completed=true,completed_by=$1,completed_at='2027-09-03T01:00:00Z' WHERE activity_id=$2", [h,a.activityId]);
   const inputs = { start: "2027-09-01T00:00:00Z", end: "2027-09-08T00:00:00Z", asOf: "2027-09-10T00:00:00Z" };
   const realAdoption = await run("inviter_adoption", inputs);
   expect(Number(realAdoption.results[0]![0]!.bookers)).toBe(0);
@@ -748,7 +744,7 @@ it("when every fixture fact is labeled demo, all real reports exclude it and exp
   expect(Number(realConversion.results[0]!.find(r => r.segment === "total")!.opportunities)).toBe(0);
   const realK = await run("k_factor_by_rail", inputs);
   expect(realK.results[0]!.every(r => Number(r.cohort_inviters) === 0 && r.k_factor === null)).toBe(true);
-  expect((await run("plan_completion_by_arm", inputs)).results[0]).toHaveLength(0);
+  expect((await run("holdout_comparison", inputs)).results[0]).toHaveLength(0);
   const demo = { ...inputs, dataset: "demo" };
   const adoption = (await run("inviter_adoption", demo)).results[0]![0]!;
   expect(Number(adoption.bookers)).toBe(1);
@@ -760,7 +756,157 @@ it("when every fixture fact is labeled demo, all real reports exclude it and exp
   expect(Number(k.cohort_inviters)).toBe(1);
   expect(Number(k.acquired_users)).toBe(1);
   expect(Number(k.acquired_users_who_booked)).toBe(1);
-  const completion = (await run("plan_completion_by_arm", demo)).results[0]!;
-  expect(Number(completion.find(r => r.arm === "treatment")!.completed_in_window)).toBe(1);
-  expect(Number(completion.find(r => r.arm === "control")!.activities)).toBe(1);
+  const holdout = (await run("holdout_comparison", demo)).results[0]!;
+  expect(Number(holdout.find(r => r.arm === "treatment")!.booked_participants)).toBe(1);
+  expect(Number(holdout.find(r => r.arm === "control")!.activities)).toBe(1);
+});
+
+it("when two accounts use one device in separate visits, each anonymous opening belongs to its own visit's account", async () => {
+  const host = await insertUser(pool, { key: "switch-host", name: "Host", createdAt: "2027-10-01T00:00:00Z" });
+  const first = await insertUser(pool, { key: "switch-a", name: "First", createdAt: "2027-10-01T00:00:00Z" });
+  const second = await insertUser(pool, { key: "switch-b", name: "Second", createdAt: "2027-10-01T00:00:00Z" });
+  const a = await insertActivity(pool, { hostId: host, title: "Shared device", startsAt: "2027-11-01T00:00:00Z", arm: "treatment" });
+  const firstInvite = await insertInvite(pool, { ...a, code: "SW1TCHAAAAAA", rail: "public_share", creatorId: host, createdAt: "2027-10-01T00:00:00Z", expiresAt: "2027-11-01T00:00:00Z" });
+  const secondInvite = await insertInvite(pool, { ...a, code: "SW1TCHBBBBBB", rail: "vouch", targetContactKey: "switch-b", creatorId: host, createdAt: "2027-10-01T00:00:00Z", expiresAt: "2027-11-01T00:00:00Z" });
+  const device = randomVisitor();
+  const visit1 = randomUUID();
+  const visit2 = randomUUID();
+  // The device link is written once, for the first account ever used there.
+  await pool.query("INSERT INTO visitor_identities (visitor_id,user_id,created_at) VALUES ($1,$2,'2027-10-02T08:05:00Z')", [device, first]);
+  await insertEvent(pool, { name: "invite_opened", visitorId: device, inviteId: firstInvite, channel: "flutter", outcome: "available", occurredAt: "2027-10-02T08:00:00Z", details: { visitId: visit1 } });
+  await insertEvent(pool, { name: "account_entry_completed", userId: first, visitorId: device, occurredAt: "2027-10-02T08:05:00Z", details: { visitId: visit1 } });
+  await insertEvent(pool, { name: "invite_opened", visitorId: device, inviteId: secondInvite, channel: "flutter", outcome: "available", occurredAt: "2027-10-03T08:00:00Z", details: { visitId: visit2 } });
+  await insertEvent(pool, { name: "claim_started", visitorId: device, inviteId: secondInvite, occurredAt: "2027-10-03T08:01:00Z", details: { visitId: visit2 } });
+  await insertEvent(pool, { name: "account_entry_completed", userId: second, visitorId: device, occurredAt: "2027-10-03T08:05:00Z", details: { visitId: visit2 } });
+  const booking = await insertBooking(pool, { ...a, userId: second, createdAt: "2027-10-03T08:10:00Z" });
+  await attributeClaim(booking, secondInvite, "2027-10-03T08:10:00Z");
+
+  // A third visit opens the first invitation and leaves without signing in;
+  // the next account on the device (a different visit) must not inherit it.
+  const visit3 = randomUUID();
+  await insertEvent(pool, { name: "invite_opened", visitorId: device, inviteId: firstInvite, channel: "flutter", outcome: "available", occurredAt: "2027-10-04T08:00:00Z", details: { visitId: visit3 } });
+  await insertEvent(pool, { name: "account_entry_completed", userId: second, visitorId: device, occurredAt: "2027-10-04T10:00:00Z", details: { visitId: randomUUID() } });
+
+  const report = await run("invite_conversion", { start: "2027-10-01T00:00:00Z", end: "2027-10-08T00:00:00Z", asOf: "2027-10-09T00:00:00Z" });
+  const total = report.results[0]!.find(r => r.segment === "total")!;
+  // first+firstInvite, second+secondInvite, and the unlinked visit-3 visitor.
+  expect(Number(total.opportunities)).toBe(3);
+  expect(Number(total.converted_opportunities)).toBe(1);
+  expect(Number(total.claim_started_opportunities)).toBe(1);
+  // Only the two visits that entered an account are linked to one.
+  expect(Number(total.identity_completed_people_in_window)).toBe(2);
+});
+
+it("when a booker copies one public invitation repeatedly, adoption counts the first creation once and share actions separately", async () => {
+  const host = await insertUser(pool, { key: "share-host", name: "Host", createdAt: "2027-12-01T00:00:00Z" });
+  const sharer = await insertUser(pool, { key: "share-sharer", name: "Sharer", createdAt: "2027-12-01T00:00:00Z" });
+  const viewer = await insertUser(pool, { key: "share-viewer", name: "Viewer", createdAt: "2027-12-01T00:00:00Z" });
+  const a = await insertActivity(pool, { hostId: host, title: "Share", startsAt: "2027-12-20T00:00:00Z", arm: "treatment" });
+  await insertBooking(pool, { ...a, userId: sharer, createdAt: "2027-12-02T08:00:00Z" });
+  await insertBooking(pool, { ...a, userId: viewer, createdAt: "2027-12-02T09:00:00Z" });
+  const invite = await insertInvite(pool, { ...a, code: "SHARE1AAAAAA", rail: "public_share", creatorId: sharer, createdAt: "2027-12-02T08:05:00Z", expiresAt: "2027-12-20T00:00:00Z" });
+  for (const minute of ["05", "06", "30"]) {
+    await insertEvent(pool, { name: "invite_share_action", userId: sharer, activityId: a.activityId, inviteId: invite, occurredAt: `2027-12-02T08:${minute}:00Z`, details: { shareMethod: "copy" } });
+  }
+  // Displaying the confirmation (and its sharing controls) is not inviting.
+  await insertEvent(pool, { name: "activity_viewed", userId: viewer, activityId: a.activityId, occurredAt: "2027-12-02T09:01:00Z" });
+
+  const report = await run("inviter_adoption", { start: "2027-12-01T00:00:00Z", end: "2027-12-08T00:00:00Z", asOf: "2027-12-10T00:00:00Z" });
+  const row = report.results[0]![0]!;
+  expect(Number(row.bookers)).toBe(2);
+  expect(Number(row.inviters)).toBe(1);
+  expect(Number(row.adoption_rate)).toBeCloseTo(0.5);
+  expect(Number(row.share_actions)).toBe(3);
+  expect(Number(row.bookers_with_share_actions)).toBe(1);
+});
+
+it("when acquisition and later bookings use different sources, the audit keeps signup source and generation distinct from each booking source", async () => {
+  const host = await insertUser(pool, { key: "audit-host", name: "Host", createdAt: "2027-12-01T00:00:00Z" });
+  const a = await insertActivity(pool, { hostId: host, title: "Audit A", startsAt: "2028-01-20T00:00:00Z", arm: "treatment" });
+  const b = await insertActivity(pool, { hostId: host, title: "Audit B", startsAt: "2028-01-21T00:00:00Z", arm: "treatment" });
+  const returning = await insertUser(pool, { key: "audit-returning", name: "Returning", createdAt: "2027-12-01T00:00:00Z" });
+  const hostInvite = await insertInvite(pool, { ...a, code: "AVD1TAAAAAAA", rail: "public_share", creatorId: host, createdAt: "2028-01-02T00:00:00Z", expiresAt: "2028-01-20T00:00:00Z" });
+  // Newly acquired through the host's invitation (generation 1).
+  const acquired = await insertUser(pool, { key: "audit-new", name: "New", createdAt: "2028-01-03T00:00:00Z", signupSource: "public_share", generation: 1, signupInviteId: hostInvite });
+  const first = await insertBooking(pool, { ...a, userId: acquired, createdAt: "2028-01-03T00:10:00Z" });
+  await attributeClaim(first, hostInvite, "2028-01-03T00:10:00Z");
+  // The acquired account later books another activity directly.
+  await insertBooking(pool, { ...b, userId: acquired, createdAt: "2028-01-04T00:00:00Z" });
+  // A returning account books through an invitation: no acquisition.
+  const returningBooking = await insertBooking(pool, { ...a, userId: returning, createdAt: "2028-01-04T01:00:00Z" });
+  await attributeClaim(returningBooking, hostInvite, "2028-01-04T01:00:00Z");
+  // Second generation: acquired through the acquired account's invitation.
+  const secondInvite = await insertInvite(pool, { ...a, code: "AVD1TBBBBBBB", rail: "vouch", targetContactKey: "audit-second", creatorId: acquired, createdAt: "2028-01-05T00:00:00Z", expiresAt: "2028-01-20T00:00:00Z" });
+  const second = await insertUser(pool, { key: "audit-second", name: "Second", createdAt: "2028-01-05T01:00:00Z", signupSource: "vouch", generation: 2, signupInviteId: secondInvite });
+
+  const report = await run("acquisition_audit", { start: "2028-01-01T00:00:00Z", end: "2028-01-08T00:00:00Z", asOf: "2028-01-10T00:00:00Z" });
+  const rows = report.results[0]!;
+  const row = (id: string) => rows.find((r) => r.account_id === id)!;
+  expect(row(acquired)).toMatchObject({ signup_source: "public_share", signup_generation: 1, signup_inviter_id: host, acquired_in_cohort: true });
+  expect(row(acquired).booking_sources).toEqual(expect.arrayContaining([
+    expect.objectContaining({ source: "public_share", generation: 1, inviter_id: host }),
+    expect.objectContaining({ source: "direct", generation: null, inviter_id: null }),
+  ]));
+  expect(row(returning)).toMatchObject({ signup_source: "direct", signup_generation: 0, acquired_in_cohort: false });
+  expect(row(returning).booking_sources).toEqual([expect.objectContaining({ source: "public_share", inviter_id: host })]);
+  expect(row(second)).toMatchObject({ signup_source: "vouch", signup_generation: 2, signup_inviter_id: acquired, acquired_in_cohort: true, booking_sources: [] });
+  expect(rows.find((r) => r.account_id === host)).toBeUndefined(); // neither acquired nor booking in the cohort
+  // The host existed and hosted before the cohort, so its acquisition counts
+  // toward K; the second generation was invited by a cohort newcomer.
+  expect(row(acquired).in_k_factor_numerator).toBe(true);
+  expect(row(second).in_k_factor_numerator).toBe(false);
+  expect(row(returning).in_k_factor_numerator).toBe(false);
+});
+
+it("when reports run, rates carry uncertainty and only a mature, non-empty real cohort is judged against its target", async () => {
+  const host = await insertUser(pool, { key: "assess-host", name: "Host", createdAt: "2028-02-01T00:00:00Z" });
+  const inviter = await insertUser(pool, { key: "assess-inviter", name: "Inviter", createdAt: "2028-02-01T00:00:00Z" });
+  const quiet = await insertUser(pool, { key: "assess-quiet", name: "Quiet", createdAt: "2028-02-01T00:00:00Z" });
+  const a = await insertActivity(pool, { hostId: host, title: "Assess", startsAt: "2028-02-20T00:00:00Z", arm: "treatment" });
+  await insertBooking(pool, { ...a, userId: inviter, createdAt: "2028-02-02T08:00:00Z" });
+  await insertBooking(pool, { ...a, userId: quiet, createdAt: "2028-02-02T09:00:00Z" });
+  const invite = await insertInvite(pool, { ...a, code: "ASSESSAAAAAA", rail: "public_share", creatorId: inviter, createdAt: "2028-02-02T08:10:00Z", expiresAt: "2028-02-20T00:00:00Z" });
+  for (const hour of ["10", "11", "12", "13"]) {
+    await insertEvent(pool, { name: "invite_opened", visitorId: randomVisitor(), inviteId: invite, channel: "flutter", outcome: "available", occurredAt: `2028-02-02T${hour}:00:00Z` });
+  }
+  const week = { start: "2028-02-01T00:00:00Z", end: "2028-02-08T00:00:00Z" };
+  const mature = { ...week, asOf: "2028-02-10T00:00:00Z" };
+
+  const adoption = await run("inviter_adoption", mature);
+  const row = adoption.results[0]![0]!;
+  expect(Number(row.adoption_rate)).toBeCloseTo(0.5);
+  expect(row.adoption_rate_ci_low).toBeCloseTo(0.0945, 3); // Wilson 95%, 1 of 2
+  expect(row.adoption_rate_ci_high).toBeCloseTo(0.9055, 3);
+  expect(adoption.assessment).toMatchObject({ target: 0.3, observed: 0.5, status: "meets", trigger: null });
+
+  const conversion = await run("invite_conversion", mature);
+  expect(conversion.assessment).toMatchObject({ target: 0.25, observed: 0, status: "below" });
+  expect(conversion.assessment.trigger).toContain("below 25%");
+  const total = conversion.results[0]!.find((r) => r.segment === "total")!;
+  expect(total.conversion_rate_ci_low).toBe(0);
+  expect(Number(total.conversion_rate_ci_high)).toBeGreaterThan(0);
+
+  const immature = await run("inviter_adoption", { ...week, asOf: "2028-02-08T12:00:00Z" });
+  expect(immature.assessment.status).toBe("not_assessable");
+  expect(immature.assessment.reasons).toContain("incomplete_window");
+  const demo = await run("inviter_adoption", { ...mature, dataset: "demo" });
+  expect(demo.assessment.status).toBe("not_assessable");
+  expect(demo.assessment.reasons).toEqual(expect.arrayContaining([expect.stringContaining("demo_dataset"), "empty_sample"]));
+  const empty = await run("invite_conversion", { start: "2028-03-01T00:00:00Z", end: "2028-03-08T00:00:00Z", asOf: "2028-03-10T00:00:00Z" });
+  expect(empty.assessment).toMatchObject({ status: "not_assessable", reasons: ["empty_sample"], observed: null });
+
+  const k = await run("k_factor_by_rail", mature);
+  expect(k.assessment).toMatchObject({ status: "descriptive", target: null });
+  expect(k.assessment.note).toContain("No numerical K-factor target");
+  expect(k.results[0]![0]).toHaveProperty("k_factor_ci_high");
+});
+
+it("bounds K-factor with an exact Poisson interval that widens monotonically with the count", () => {
+  const [zeroLow, zeroHigh] = poissonInterval(0);
+  expect(zeroLow).toBe(0);
+  expect(zeroHigh).toBeCloseTo(3.689, 2);
+  const [oneLow, oneHigh] = poissonInterval(1);
+  expect(oneLow).toBeCloseTo(0.0253, 3);
+  expect(oneHigh).toBeCloseTo(5.572, 2);
+  expect(poissonInterval(10)[1]).toBeCloseTo(18.39, 1);
 });

@@ -1,6 +1,9 @@
 -- $1/$2: seven-day half-open cohort; $3: as-of; $4: real|demo.
 -- Each person enters at their first treatment booking IN the cohort.
 -- Both rails may contribute diagnostics, but a person counts once overall.
+-- Only a deliberate invitation creation qualifies; repeat copies of the same
+-- public link are share actions, reported separately, and page display alone
+-- never counts.
 WITH entries AS (
   SELECT DISTINCT ON (b.user_id) b.user_id, b.created_at AS entry_at,
          b.activity_id, a.starts_at,
@@ -31,7 +34,11 @@ WITH entries AS (
          EXISTS (SELECT 1 FROM invites i WHERE i.creator_id = en.user_id
                  AND i.activity_id = en.activity_id AND i.created_at >= en.entry_at
                  AND i.created_at < en.deadline AND i.created_at <= $3::timestamptz
-                 AND i.rail = 'vouch') AS invited_vouch
+                 AND i.rail = 'vouch') AS invited_vouch,
+         (SELECT COUNT(*) FROM events sa WHERE sa.event_name = 'invite_share_action'
+                 AND sa.user_id = en.user_id AND sa.activity_id = en.activity_id
+                 AND sa.occurred_at >= en.entry_at AND sa.occurred_at < en.deadline
+                 AND sa.occurred_at <= $3::timestamptz) AS share_actions
   FROM entries en
 ), host_only AS (
   SELECT COUNT(DISTINCT i.creator_id) AS host_only_inviters
@@ -50,6 +57,8 @@ SELECT $1::timestamptz AS cohort_start, $2::timestamptz AS cohort_end,
        COUNT(*) FILTER (WHERE invited)::numeric / NULLIF(COUNT(*), 0) AS adoption_rate,
        COUNT(*) FILTER (WHERE invited_public_share) AS inviters_public_share,
        COUNT(*) FILTER (WHERE invited_vouch) AS inviters_vouch,
+       COALESCE(SUM(share_actions), 0) AS share_actions,
+       COUNT(*) FILTER (WHERE share_actions > 0) AS bookers_with_share_actions,
        COUNT(*) FILTER (WHERE remaining_at_entry <= 0) AS final_spot_bookers,
        COUNT(*) FILTER (WHERE invited AND remaining_at_entry <= 0) AS final_spot_inviters,
        COUNT(*) FILTER (WHERE remaining_at_entry > 0) AS bookers_with_remaining_spots,
