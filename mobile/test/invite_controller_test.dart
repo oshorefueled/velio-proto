@@ -454,7 +454,10 @@ void main() {
     await mismatch.controller.claim();
     final phase = mismatch.controller.claimState as ClaimRefused;
     expect(phase.reason, 'invite-mismatch');
-    expect(phase.message.contains('another email'), true);
+    expect(
+      phase.message,
+      'This invitation was vouched for a different contact — switch to the account that was invited to claim it.',
+    );
   });
 
   test('display telemetry emits activity_viewed and one stable invite_opened for documented states only', () async {

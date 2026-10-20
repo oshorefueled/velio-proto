@@ -117,74 +117,91 @@ class _InviteScreenState extends State<InviteScreen>
             ? null
             : controller.leaveCheckout,
       _Page.code => () => setState(() => _enterCode = false),
-      _ => null,
+      _Page.confirmation => _goHome,
+      _Page.bookings => null,
     };
     final showBack =
         page == _Page.invitation ||
         page == _Page.checkout ||
         (page == _Page.code && _enterCode);
-    return Scaffold(
-      backgroundColor: const Color(0xFFF9FAF9),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        centerTitle: true,
-        shape: const Border(bottom: BorderSide(color: border)),
-        leading: showBack
-            ? IconButton(
-                key: const Key('back'),
-                icon: const Icon(Icons.arrow_back),
-                tooltip: 'Back',
-                onPressed: back,
-              )
-            : null,
-        title: const Text(
-          'VELIO',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            letterSpacing: 6,
-            fontSize: 17,
-            color: ink,
+    final home = page == _Page.bookings || (page == _Page.code && !_enterCode);
+    return PopScope(
+      canPop: home,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) back?.call();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF9FAF9),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: true,
+          shape: const Border(bottom: BorderSide(color: border)),
+          leading: showBack
+              ? IconButton(
+                  key: const Key('back'),
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Back',
+                  onPressed: back,
+                )
+              : null,
+          actions: [
+            if (page == _Page.invitation)
+              TextButton(
+                key: const Key('close-invite'),
+                onPressed: controller.closeInvite,
+                child: const Text('Close invite'),
+              ),
+          ],
+          title: const Text(
+            'VELIO',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              letterSpacing: 6,
+              fontSize: 17,
+              color: ink,
+            ),
           ),
         ),
-      ),
-      body: SafeArea(
-        child: switch (page) {
-          _Page.code => _CodePage(
-            controller: controller,
-            codeField: _codeField,
-            contactField: _contactField,
-            independentSignIn: _independentSignIn,
-            onToggleSignIn: () =>
-                setState(() => _independentSignIn = !_independentSignIn),
-            onResume: controller.preview == null
-                ? null
-                : () => setState(() => _home = false),
-          ),
-          _Page.invitation => _InvitationPage(controller: controller),
-          _Page.checkout => _CheckoutPage(
-            controller: controller,
-            contactField: _contactField,
-          ),
-          _Page.confirmation => _ConfirmationPage(
-            controller: controller,
-            onViewBookings: _goHome,
-            onViewActivity: () => setState(() => _viewActivity = true),
-          ),
-          _Page.bookings => _BookingsPage(
-            controller: controller,
-            contactField: _contactField,
-            onEnterCode: () => setState(() {
-              _enterCode = true;
-              _home = true;
-            }),
-            onResume: controller.preview == null
-                ? null
-                : () => setState(() => _home = false),
-          ),
-        },
+        body: SafeArea(
+          child: switch (page) {
+            _Page.code => _CodePage(
+              controller: controller,
+              codeField: _codeField,
+              contactField: _contactField,
+              independentSignIn: _independentSignIn,
+              onToggleSignIn: () =>
+                  setState(() => _independentSignIn = !_independentSignIn),
+              onResume: controller.preview == null
+                  ? null
+                  : () => setState(() => _home = false),
+            ),
+            _Page.invitation => _InvitationPage(controller: controller),
+            _Page.checkout => _CheckoutPage(
+              controller: controller,
+              contactField: _contactField,
+              onCancel: back,
+            ),
+            _Page.confirmation => _ConfirmationPage(
+              controller: controller,
+              onViewBookings: _goHome,
+              onViewActivity: () => setState(() => _viewActivity = true),
+            ),
+            _Page.bookings => _BookingsPage(
+              controller: controller,
+              contactField: _contactField,
+              onEnterCode: () => setState(() {
+                _enterCode = true;
+                _home = true;
+              }),
+              onResume: controller.preview == null
+                  ? null
+                  : () => setState(() => _home = false),
+            ),
+          },
+        ),
       ),
     );
   }
@@ -809,10 +826,15 @@ class _InvitationPage extends StatelessWidget {
 }
 
 class _CheckoutPage extends StatelessWidget {
-  const _CheckoutPage({required this.controller, required this.contactField});
+  const _CheckoutPage({
+    required this.controller,
+    required this.contactField,
+    required this.onCancel,
+  });
 
   final InviteController controller;
   final TextEditingController contactField;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -895,6 +917,11 @@ class _CheckoutPage extends StatelessWidget {
           checkout: true,
         ),
         if (controller.session != null) _ClaimCard(controller: controller),
+        OutlinedButton(
+          key: const Key('cancel-checkout'),
+          onPressed: onCancel,
+          child: const Text('Cancel'),
+        ),
       ],
     );
   }
@@ -975,23 +1002,10 @@ class _ConfirmationPage extends StatelessWidget {
                 value:
                     '${formatMoneyCompact(activity.priceMinorUnits, activity.currency)} per person',
               ),
-              _FactRow(
-                icon: Icons.confirmation_number_outlined,
-                label: 'Booking',
-                value: phase.booking.id,
-                below: Text(
-                  'Saved ${DateFormat('EEE, d MMM yyyy · HH:mm').format(DateTime.parse(phase.booking.createdAt).toLocal())}',
-                  style: const TextStyle(fontSize: 12, color: inkFaint),
-                ),
-              ),
             ],
           ),
         ),
-        const Text(
-          'We’ll keep this in My bookings — reopening shows it again, even if the invitation is no longer usable.',
-          style: TextStyle(fontSize: 13, color: inkSoft),
-        ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 6),
         FilledButton(
           key: const Key('view-bookings'),
           onPressed: onViewBookings,
@@ -1110,7 +1124,7 @@ class _BookingsPage extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                Text('Booking ${controller.savedReceipt!.id} · 1 spot saved'),
+                const Text('1 spot saved'),
                 Text(
                   chipDateRange(
                     details.activity.startsAt,
@@ -1263,9 +1277,9 @@ class _ClaimCard extends StatelessWidget {
     return _Surface(
       key: const Key('claim-card'),
       child: switch (phase) {
-        ClaimConfirmed() => Text(
-          'Your spot is saved — you are in the plan. Booking ${phase.booking.id}',
-          style: const TextStyle(fontWeight: FontWeight.w700, color: green),
+        ClaimConfirmed() => const Text(
+          'Your spot is saved — you are in the plan.',
+          style: TextStyle(fontWeight: FontWeight.w700, color: green),
         ),
         ClaimUnknown() => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1325,8 +1339,7 @@ class _ClaimCard extends StatelessWidget {
             const SizedBox(height: 10),
             if (phase.reason == 'absent' ||
                 phase.reason == 'rate-limited' ||
-                phase.reason == 'failed' ||
-                phase.reason == 'invite-mismatch')
+                phase.reason == 'failed')
               FilledButton(
                 key: const Key('retry-claim'),
                 onPressed: !claimable ? null : () => controller.claim(),
