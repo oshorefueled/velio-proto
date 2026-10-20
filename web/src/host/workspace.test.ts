@@ -249,7 +249,7 @@ it("when navigating between activity lists, the same detail has one live owner a
     if (url.endsWith("/client-events")) { eventIds.push("observed"); return { status: 200, json: {} }; }
     return { status: 200, json: { activity: activity("a"), invites: {} } };
   }));
-  await click("Explore activities");
+  await click("Explore");
   await click("My activities");
   expect(document.querySelectorAll("#guest-detail-heading")).toHaveLength(1);
   expect(ScriptedLiveSocket.instances).toHaveLength(1);

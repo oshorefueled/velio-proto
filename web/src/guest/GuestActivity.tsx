@@ -162,7 +162,7 @@ function BookingControls({
         <button type="button" className="button-ghost" onClick={onBackToActivity}>Back to activity</button>
         {ready ? (
           <button type="button" className="button-primary book-cta" onClick={onBook}>Confirm one spot</button>
-        ) : (
+        ) : state.status.status === "credential-lost" ? null : (
           <IdentityPanel contextNote="Your checkout is kept." />
         )}
         <p className="hint">Your spot is confirmed once your booking is saved.</p>

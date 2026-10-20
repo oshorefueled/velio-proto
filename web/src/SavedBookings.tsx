@@ -20,8 +20,8 @@ export function SavedBookings({ onSelect }: { onSelect: (id: string) => void }) 
     return () => { current = false; };
   }, [authorized, token, retry]);
   const bookings = result.token === token ? result.bookings : null;
-  return <section className="panel" aria-labelledby="bookings-heading">
-    <div className="panel-head"><h2 id="bookings-heading">My bookings</h2><button type="button" className="button-ghost" onClick={() => setRetry(value => value + 1)}>Refresh</button></div>
+  return <section className="panel" aria-label="My bookings">
+    <div className="panel-head"><span /><button type="button" className="button-ghost" onClick={() => setRetry(value => value + 1)}>Refresh</button></div>
     {result.token === token && result.error ? <div role="alert">{result.error} <button type="button" onClick={() => setRetry(value => value + 1)}>Retry</button></div>
       : bookings === null ? <p className="hint" role="status">Loading your bookings…</p>
         : bookings.length === 0 ? <p className="hint">You haven’t booked an activity yet. Explore to find your next outing.</p>

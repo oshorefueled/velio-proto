@@ -201,11 +201,14 @@ it("when a booking request is in flight, submit stays disabled and a second clic
   await settle();
   expect(document.body.textContent).toContain("Your spot is saved");
   expect(document.body.textContent).toContain("booking-booker");
-  expect(document.querySelector(".browse-item")!.textContent).toContain("full");
   const receipt = document.querySelector('[aria-label="Saved booking"]')!;
   expect(receipt.textContent).toContain("plan-a");
   expect(receipt.textContent).not.toContain("Source");
   expect(receipt.textContent).not.toContain("direct");
+  // The full-page detail leaves the grid unmounted until the back link.
+  await click("Back to Explore");
+  await settle();
+  expect(document.querySelector(".activity-card")!.textContent).toContain("No spots left");
   expect(postBodies).toHaveLength(1);
 });
 
@@ -236,7 +239,9 @@ it("when a committed booking's response is lost, the saved-booking lookup shows 
   await settle();
   expect(myBookingCalls).toBe(2); // unknown outcome reconciled before anything else
   expect(document.body.textContent).toContain("Your spot is saved");
-  expect(document.querySelector(".browse-item")!.textContent).toContain("full");
+  await click("Back to Explore");
+  await settle();
+  expect(document.querySelector(".activity-card")!.textContent).toContain("No spots left");
 });
 
 it("when the saved-booking check cannot run the outcome stays unknown; established absence enables only an explicit retry with the SAME operation id", async () => {
@@ -343,7 +348,7 @@ it("when activity details fail, Retry keeps the selection and availability stays
   await click("Retry");
   await settle();
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
-  expect(document.body.textContent).toContain("1 remaining");
+  expect(document.body.textContent).toContain("1 spot left of 2");
   expect(document.body.textContent).toContain("Book a spot");
 });
 
@@ -499,6 +504,8 @@ it("when selecting another activity before an old booking returns 401, the curre
   });
   await click("Book a spot");
   await click("Confirm one spot");
+  await click("Back to Explore");
+  await settle();
   const next = [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Activity b"));
   expect(next).toBeDefined();
   await act(async () => next!.click());
@@ -552,7 +559,7 @@ it("when a live availability frame is newer, the guest's displayed spots update 
     if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
     return ok({});
   });
-  expect(document.body.textContent).toContain("1 booked · 1 remaining of 2");
+  expect(document.body.textContent).toContain("1 booked · 1 spot left of 2");
   const socket = ScriptedLiveSocket.instances.at(-1)!;
   await act(async () => socket.open());
   await act(async () =>
@@ -564,12 +571,12 @@ it("when a live availability frame is newer, the guest's displayed spots update 
     socket.receive({ type: "availability", activityId: "a", version: "7", remainingSpots: 0, eventId: null }),
   );
   await settle();
-  expect(document.body.textContent).toContain("2 booked · 0 remaining of 2");
+  expect(document.body.textContent).toContain("2 booked · no spots left of 2");
   expect([...document.querySelectorAll("button")].some((button) => button.textContent === "Full")).toBe(true);
   expect(acks.length).toBeGreaterThanOrEqual(1);
   const renderedAck = acks.at(-1)!;
   expect(renderedAck.body).toMatchObject({ appliedVersion: "7", source: "websocket" });
-  expect(renderedAck.dom).toContain("0 remaining of 2");
+  expect(renderedAck.dom).toContain("no spots left of 2");
 });
 
 it("when a guest confirms then signs out, signing in with the same email reopens the original saved booking", async () => {
@@ -605,7 +612,10 @@ it("when a guest confirms then signs out, signing in with the same email reopens
   expect(document.body.textContent).toContain("booking-booker");
   await click("Sign out");
   expect(document.body.textContent).not.toContain("booking-booker");
-  const anotherActivity = [...document.querySelectorAll<HTMLButtonElement>(".browse-item")].find(button => button.textContent?.includes("Activity b"))!;
+  // The grid returns through the detail's back link in the full-page layout.
+  await click("Back to Explore");
+  await settle();
+  const anotherActivity = [...document.querySelectorAll<HTMLButtonElement>(".activity-card")].find(button => button.textContent?.includes("Activity b"))!;
   await act(async () => anotherActivity.click());
   await settle();
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity b");
@@ -619,6 +629,10 @@ it("when a guest confirms then signs out, signing in with the same email reopens
   await act(async () => document.querySelector('dialog [name="email"]')!.closest("form")!.requestSubmit());
   await settle();
   await click("My bookings");
+  await settle();
+  // A selection stays up across page navigation (one live owner); the list
+  // returns through the detail's back link.
+  await click("Back to My bookings");
   await settle();
   const savedActivity = [...document.querySelectorAll<HTMLButtonElement>(".browse-item")].find(button => button.textContent?.includes("Activity a"))!;
   await act(async () => savedActivity.click());
@@ -716,7 +730,7 @@ it("when an account shortcut is selected during checkout, unmounting email entry
       created: false,
     })));
     await settle();
-    expect(document.querySelector(".account-name")?.textContent).toContain(`${account} account`);
+    expect(document.querySelector(".account-viewing")?.textContent).toContain(`${account} account`);
     expect(document.body.textContent).not.toContain("Opening account…");
     expect(document.querySelector('[aria-label="Checkout"]')!.textContent).toContain(email);
     entry = deferred<Awaited<ReturnType<Transport>>>();
@@ -757,7 +771,7 @@ it("when availability refreshes while an activity stays open, viewing telemetry 
     await act(async () => socket.receive({ type: "availability", activityId: "a", version: "7", remainingSpots: 0, eventId: null }));
     await settle();
     expect(snapshots).toBeGreaterThanOrEqual(4);
-    expect(document.body.textContent).toContain("0 remaining");
+    expect(document.body.textContent).toContain("no spots left");
     expect(observations).toHaveLength(1);
     await click("Sign out");
     await settle();
@@ -779,13 +793,17 @@ it("when the selected activity's live availability advances, its browse row show
     return ok({});
   });
   await settle();
-  expect(document.querySelector(".browse-item")!.textContent).toContain("1 of 2 spots left");
+  expect(document.body.textContent).toContain("1 booked · 1 spot left of 2");
   const socket = ScriptedLiveSocket.instances.at(-1)!;
   await act(async () => socket.open());
   await act(async () => socket.receive({ type: "subscribed", activityId: "a" }));
   await settle();
   await act(async () => socket.receive({ type: "availability", activityId: "a", version: "2", remainingSpots: 0, eventId: null }));
   await settle();
-  expect(document.body.textContent).toContain("2 booked · 0 remaining of 2");
-  expect(document.querySelector(".browse-item")!.textContent).toContain("full");
+  // The detail applies the newer frame, and the browse row shows the same
+  // count once the grid is reached again through the back link.
+  expect(document.body.textContent).toContain("2 booked · no spots left of 2");
+  await click("Back to Explore");
+  await settle();
+  expect(document.querySelector(".activity-card")!.textContent).toContain("No spots left");
 });

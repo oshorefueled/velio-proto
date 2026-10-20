@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSession } from "./session.js";
+import { PersonIcon } from "./icons.js";
 
 export type DemoAccount = "Host" | "Booker" | "Guest";
 
@@ -22,7 +23,7 @@ export function AccountSelector({ onSelect, onSignIn }: {
     <div className="tool-toggle" role="group" aria-label="Demo account">
       {(["Host", "Booker", "Guest"] as const).map(account => <button key={account} type="button" aria-pressed={selected === account} className={selected === account ? "toggle-on" : ""} onClick={() => select(account)}>{account}</button>)}
     </div>
-    {user ? <span className="account-name">{user.displayName} <button type="button" className="button-ghost" onClick={() => select("Guest")}>Sign out</button></span>
+    {user ? <span className="account-viewing"><PersonIcon /> Viewing as {user.displayName} <button type="button" className="button-ghost" onClick={() => select("Guest")}>Sign out</button></span>
       : selected === "Guest" ? <button type="button" className="button-ghost" onClick={onSignIn}>Sign in</button>
         : <span className="hint" role="status">Opening account…</span>}
     {state.status.status === "anonymous" && state.status.error && <span role="alert">{state.status.error}</span>}

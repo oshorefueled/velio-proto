@@ -22,7 +22,7 @@ it("when demo accounts are selected, Host opens hosted activities, Booker opens 
   vi.stubGlobal("WebSocket", class { close() {} });
   const container = document.createElement("div"); document.body.append(container);
   const root = createRoot(container);
-  const text = () => [...container.querySelectorAll("h2")].filter(el => !el.closest("[hidden]")).map(el => el.textContent);
+  const text = () => [...container.querySelectorAll("h1,h2")].filter(el => !el.closest("[hidden]")).map(el => el.textContent);
   const click = async (name: string) => act(async () => [...container.querySelectorAll("button")].find(b => b.textContent === name)!.click());
   try {
     await act(async () => root.render(createElement(SessionProvider, { transport, children: createElement(App) })));
@@ -35,7 +35,7 @@ it("when demo accounts are selected, Host opens hosted activities, Booker opens 
     expect(container.textContent).toContain("Saved sunset paddle");
     expect(requests.some(url => url.endsWith("/my/bookings"))).toBe(true);
     await click("Guest");
-    expect(text()).toContain("Browse activities");
+    expect(text()).toContain("Explore activities");
     expect([...container.querySelectorAll("input[name=email]")].filter(el => !el.closest("[hidden]") )).toHaveLength(0);
   } finally { await act(async () => root.unmount()); container.remove(); localStorage.clear(); vi.unstubAllGlobals(); }
 });
