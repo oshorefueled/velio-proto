@@ -184,7 +184,7 @@ it("when a booking request is in flight, submit stays disabled and a second clic
   const checkout = document.querySelector('[aria-label="Checkout"]');
   expect(checkout).not.toBeNull();
   expect(checkout!.textContent).toContain("Activity a");
-  expect(checkout!.textContent).toContain("UTC");
+  expect(checkout!.textContent).toContain("12:00–14:00");
   expect(checkout!.textContent).toContain("€10.50");
   expect(checkout!.textContent).toContain("1 spot");
   expect(checkout!.textContent).toContain("booker@example.test");
@@ -350,7 +350,7 @@ it("when activity details fail, Retry keeps the selection and availability stays
   await click("Retry");
   await settle();
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
-  expect(document.body.textContent).toContain("1 spot left of 2");
+  expect(document.body.textContent).toContain("1 of 2 spots left");
   expect(document.body.textContent).toContain("Book a spot");
 });
 
@@ -561,7 +561,7 @@ it("when a live availability frame is newer, the guest's displayed spots update 
     if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
     return ok({});
   });
-  expect(document.body.textContent).toContain("1 booked · 1 spot left of 2");
+  expect(document.body.textContent).toContain("1 of 2 spots left");
   const socket = ScriptedLiveSocket.instances.at(-1)!;
   await act(async () => socket.open());
   await act(async () =>
@@ -573,12 +573,12 @@ it("when a live availability frame is newer, the guest's displayed spots update 
     socket.receive({ type: "availability", activityId: "a", version: "7", remainingSpots: 0, eventId: null }),
   );
   await settle();
-  expect(document.body.textContent).toContain("2 booked · no spots left of 2");
+  expect(document.body.textContent).toContain("0 of 2 spots left");
   expect([...document.querySelectorAll("button")].some((button) => button.textContent === "Full")).toBe(true);
   expect(acks.length).toBeGreaterThanOrEqual(1);
   const renderedAck = acks.at(-1)!;
   expect(renderedAck.body).toMatchObject({ appliedVersion: "7", source: "websocket" });
-  expect(renderedAck.dom).toContain("no spots left of 2");
+  expect(renderedAck.dom).toContain("0 of 2 spots left");
 });
 
 it("when a guest confirms then signs out, signing in with the same email reopens the original saved booking", async () => {
@@ -769,7 +769,7 @@ it("when availability refreshes while an activity stays open, viewing telemetry 
     await act(async () => socket.receive({ type: "availability", activityId: "a", version: "7", remainingSpots: 0, eventId: null }));
     await settle();
     expect(snapshots).toBeGreaterThanOrEqual(4);
-    expect(document.body.textContent).toContain("no spots left");
+    expect(document.body.textContent).toContain("0 of 2 spots left");
     expect(observations).toHaveLength(1);
     await click("Sign out");
     await settle();
@@ -791,7 +791,7 @@ it("when the selected activity's live availability advances, its browse row show
     return ok({});
   });
   await settle();
-  expect(document.body.textContent).toContain("1 booked · 1 spot left of 2");
+  expect(document.body.textContent).toContain("1 of 2 spots left");
   const socket = ScriptedLiveSocket.instances.at(-1)!;
   await act(async () => socket.open());
   await act(async () => socket.receive({ type: "subscribed", activityId: "a" }));
@@ -800,7 +800,7 @@ it("when the selected activity's live availability advances, its browse row show
   await settle();
   // The detail applies the newer frame, and the browse row shows the same
   // count once the grid is reached again through the back link.
-  expect(document.body.textContent).toContain("2 booked · no spots left of 2");
+  expect(document.body.textContent).toContain("0 of 2 spots left");
   await click("Back to Explore");
   await settle();
   expect(document.querySelector(".activity-card")!.textContent).toContain("No spots left");

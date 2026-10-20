@@ -1,18 +1,11 @@
 import { formatMoneyCompact } from "../money.js";
-import { chipDateRange, initials, zoneLabel } from "../present.js";
+import { chipDateRange, initials, zoneOffsetLabel } from "../present.js";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PublicActivityView } from "../api.js";
 import { compareVersions } from "../live/availability.js";
 import { useSession } from "../session.js";
 import { ArrowRightIcon, CalendarIcon } from "../icons.js";
 
-/**
- * Public activity browse (issue #15, US02), revamped to the explore card
- * grid: the list loads and stays selectable before any identity selection.
- * A failed load means availability is unknown — never zero — so the error
- * state offers Retry instead of facts. Selection is the app's single
- * selected activity (URL-persistent) and opens the full detail page.
- */
 
 function CardSpots({ activity }: { activity: PublicActivityView }): ReactNode {
   if (activity.started) {
@@ -66,7 +59,7 @@ export function ActivityBrowser({
 
   return (
     <section aria-label="Explore activities">
-      <div className="panel-head">
+      <div className="panel-head list-tools">
         <span className="hint" aria-busy={loading || undefined}>
           {loading ? "Loading activities — availability unknown until they arrive…" : ""}
         </span>
@@ -96,6 +89,7 @@ export function ActivityBrowser({
             live !== null && live.activityId === loaded.id && compareVersions(live.version, loaded.availabilityVersion) > 0
               ? { ...loaded, remainingSpots: live.remainingSpots }
               : loaded;
+          const offset = zoneOffsetLabel(activity.startsAt, activity.timezone);
           return (
           <li key={activity.id}>
             <button
@@ -106,7 +100,7 @@ export function ActivityBrowser({
             >
               <span className="chip-row">
                 <span className="chip"><CalendarIcon /> {chipDateRange(activity.startsAt, activity.endsAt, activity.timezone)}</span>
-                <span className="chip">{zoneLabel(activity.timezone)}</span>
+                {offset !== null && <span className="chip">{offset}</span>}
               </span>
               <span className="card-title">{activity.title}</span>
               <span className="hosted-by"><span className="avatar">{initials(activity.hostDisplayName)}</span> Hosted by {activity.hostDisplayName}</span>

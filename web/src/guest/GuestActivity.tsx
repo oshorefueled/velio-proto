@@ -1,7 +1,7 @@
 import { IdentityPanel } from "../IdentityPanel.js";
 import { Participants } from "../host/Participants.js";
 import { formatMoneyCompact } from "../money.js";
-import { chipDateRange, chipDateTime, countryName, durationLabel, initials, zoneLabel } from "../present.js";
+import { chipDateRange, chipDateTime, countryName, durationLabel, initials, zoneOffsetLabel } from "../present.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { BookingStore, BookingState } from "../booking-store.js";
 import type { ActivityDetailView } from "../api.js";
@@ -9,22 +9,7 @@ import { LiveStatus } from "../live/LiveStatus.js";
 import { compareVersions, useLiveAcknowledgement, useLiveAvailability } from "../live/availability.js";
 import { useSession } from "../session.js";
 import { emitActivityViewed } from "../telemetry.js";
-import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon, GlobeIcon, GroupIcon } from "../icons.js";
-
-/**
- * Public activity detail with the booking panel (issue #15, US02/03), laid
- * out as the full detail page of the revamp: facts and story on the left,
- * price, availability and booking in the sidebar card. Facts load before
- * any identity selection; booking requires one. The booking phase comes
- * from the shared controller (booking-store.ts), so pending is never a
- * confirmation, an unknown outcome reconciles against the saved booking,
- * and a refusal refreshes the real facts instead of claiming them.
- *
- * The hero gallery is decorative structure only: the API carries no photos,
- * and none are invented here.
- */
-
-
+import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon, ClockIcon, GlobeIcon, GroupIcon } from "../icons.js";
 
 function BookingControls({
   booking,
@@ -178,7 +163,7 @@ function BookingControls({
     return (
       <div className="booking-panel">
         <button type="button" className="button-primary book-cta" onClick={onReview}>
-          Book a spot<ArrowRightIcon />
+          Book a spot<span className="cta-arrow"><ArrowRightIcon /></span>
         </button>
       </div>
     );
@@ -344,7 +329,7 @@ export function GuestActivity({
 
   if (loading) {
     return (
-      <section className="page" aria-busy="true" aria-label="Activity">
+      <section className="activity-page" aria-busy="true" aria-label="Activity">
         {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
         <p className="hint">Opening the activity…</p>
         <p className="hint">Availability is unknown until it loads — it is not zero.</p>
@@ -353,7 +338,7 @@ export function GuestActivity({
   }
   if (loadError !== null) {
     return (
-      <section className="page" aria-label="Activity">
+      <section className="activity-page" aria-label="Activity">
         {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
         <div className="notice notice-warn" role="alert">
           {loadError} Availability is unknown, not zero.
@@ -365,10 +350,11 @@ export function GuestActivity({
     );
   }
   if (detail === null) return null;
+  const offset = zoneOffsetLabel(detail.startsAt, detail.timezone);
 
   return (
     <section
-      className="page"
+      className="activity-page"
       aria-labelledby={reviewing ? undefined : "guest-detail-heading"}
       aria-label={reviewing ? "Checkout" : "Activity"}
     >
@@ -379,14 +365,12 @@ export function GuestActivity({
           <h1 className="detail-title" id="guest-detail-heading" ref={heading} tabIndex={-1}>{detail.title}</h1>
           <p className="detail-sub">{detail.description}</p>
           <div className="detail-facts">
-            <span className="hosted-by"><span className="avatar">{initials(detail.hostDisplayName)}</span> Hosted by {detail.hostDisplayName}</span>
+            <span className="hosted-by"><span className="avatar">{initials(detail.hostDisplayName)}</span> <span>Hosted by <strong>{detail.hostDisplayName}</strong></span></span>
+            <span className="fact-divider" aria-hidden="true" />
             <span className="chip"><CalendarIcon /> {chipDateRange(detail.startsAt, detail.endsAt, detail.timezone)}</span>
+            {offset !== null && <span className="chip">{offset}</span>}
             {detail.started && <span className="pill pill-blue">Started</span>}
           </div>
-          <div className="gallery-main" aria-hidden="true" />
-          <ul className="gallery-thumbs" aria-hidden="true">
-            {Array.from({ length: 5 }, (_, index) => <li key={index} className="gallery-thumb" />)}
-          </ul>
           {!reviewing && <>
             <section className="detail-section">
               <h2>About this activity</h2>
@@ -400,28 +384,12 @@ export function GuestActivity({
               <h2>Meet your host</h2>
               <div className="host-card">
                 <span className="avatar avatar-large">{initials(detail.hostDisplayName)}</span>
-                <div>
+                <div className="host-identity">
                   <div className="host-name">{detail.hostDisplayName}</div>
                   <div className="host-role">Host</div>
-                  <p>{detail.host?.summary || "This host has not added a background yet."}</p>
                 </div>
+                <p className="host-summary">{detail.host?.summary || "This host has not added a background yet."}</p>
               </div>
-            </section>
-            <section className="detail-section">
-              <h2>Previous activities</h2>
-              {detail.host?.previousActivities.length ? (
-                <ul className="previous-grid">
-                  {detail.host.previousActivities.map(activity => (
-                    <li key={activity.id} className="previous-card">
-                      <span className="previous-thumb" aria-hidden="true" />
-                      <span>
-                        <span>{activity.title}</span>
-                        <span className="card-spots-sub">{chipDateTime(activity.startsAt, detail.timezone)}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="hint">No previous activities yet.</p>}
             </section>
           </>}
         </div>
@@ -431,23 +399,20 @@ export function GuestActivity({
             <p className="aside-price">{formatMoneyCompact(detail.priceMinorUnits, detail.currency)}</p>
             <p className="aside-price-sub">per person</p>
             <div className="aside-row">
-              <CalendarIcon />
+              <span className="row-icon"><CalendarIcon /></span>
               <div>
                 <div className="row-label">Date and time</div>
-                <div className="row-value">{chipDateRange(detail.startsAt, detail.endsAt, detail.timezone)} <span className="chip">{zoneLabel(detail.timezone)}</span></div>
+                <div className="row-value">{chipDateRange(detail.startsAt, detail.endsAt, detail.timezone)}{offset !== null && <> <span className="chip">{offset}</span></>}</div>
               </div>
             </div>
             <div className="aside-row">
-              <GroupIcon />
+              <span className="row-icon"><GroupIcon /></span>
               <div>
                 <div className="row-label">Availability</div>
                 <div className="row-value">
                   {detail.started
-                    ? <span>{detail.bookedCount} booked · {detail.remainingSpots} remaining</span>
-                    : detail.remainingSpots > 0
-                      ? <span className="spots-free">{detail.bookedCount} booked · {detail.remainingSpots === 1 ? "1 spot" : `${detail.remainingSpots} spots`} left</span>
-                      : <span className="spots-none">{detail.bookedCount} booked · no spots left</span>}
-                  <span className="card-spots-sub"> of {detail.capacity}</span>
+                    ? <span>Bookings closed · {detail.bookedCount} booked</span>
+                    : <span className={detail.remainingSpots > 0 ? "spots-free" : "spots-none"}>{detail.remainingSpots} of {detail.capacity} {detail.capacity === 1 ? "spot" : "spots"} left</span>}
                 </div>
               </div>
             </div>
@@ -473,37 +438,23 @@ export function GuestActivity({
                 onReview={() => setReviewing(true)}
               />
             )}
-            <p className="aside-note">No payment will be collected in this demo.</p>
           </div>
-          <div className="aside-card">
-            <div className="aside-row">
-              <GroupIcon />
-              <div>
-                <div className="row-label">Group size</div>
-                <div className="row-value">Up to {detail.capacity} people</div>
-              </div>
+          <div className="aside-card aside-facts">
+            <div className="fact-row">
+              <span className="row-icon"><GroupIcon /></span>
+              <span className="row-label">Group size</span>
+              <span className="row-value">Up to {detail.capacity} people</span>
             </div>
-            <div className="aside-row">
-              <CalendarIcon />
-              <div>
-                <div className="row-label">Duration</div>
-                <div className="row-value">{durationLabel(detail.startsAt, detail.endsAt)}</div>
-              </div>
+            <div className="fact-row">
+              <span className="row-icon"><ClockIcon /></span>
+              <span className="row-label">Duration</span>
+              <span className="row-value">{durationLabel(detail.startsAt, detail.endsAt)}</span>
             </div>
-            {detail.country !== null && <div className="aside-row">
-              <GlobeIcon />
-              <div>
-                <div className="row-label">Country</div>
-                <div className="row-value">{countryName(detail.country)}</div>
-              </div>
+            {detail.country !== null && <div className="fact-row">
+              <span className="row-icon"><GlobeIcon /></span>
+              <span className="row-label">Country</span>
+              <span className="row-value">{countryName(detail.country)}</span>
             </div>}
-            <div className="aside-row">
-              <GlobeIcon />
-              <div>
-                <div className="row-label">Timezone</div>
-                <div className="row-value">{zoneLabel(detail.timezone)} <span className="hint-inline">({detail.timezone})</span></div>
-              </div>
-            </div>
           </div>
           {isOwner && !reviewing && <div className="aside-card"><Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} /></div>}
           {(isOwner || currentBooking?.phase.kind === "confirmed") && (
@@ -515,6 +466,19 @@ export function GuestActivity({
           )}
         </aside>
       </div>
+      {!reviewing && <section className="detail-section previous-section">
+        <h2>Previous activities</h2>
+        {detail.host?.previousActivities.length ? (
+          <ul className="previous-grid">
+            {detail.host.previousActivities.map(activity => (
+              <li key={activity.id} className="previous-card">
+                <span className="previous-title">{activity.title}</span>
+                <span className="card-spots-sub">{chipDateTime(activity.startsAt, detail.timezone)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="hint">No previous activities yet.</p>}
+      </section>}
     </section>
   );
 }

@@ -1,17 +1,10 @@
 import { formatMoneyCompact } from "../money.js";
-import { chipDateRange, hostStatus, initials, zoneLabel } from "../present.js";
+import { chipDateRange, hostStatus, initials, zoneOffsetLabel } from "../present.js";
 import { ArrowRightIcon, CalendarIcon } from "../icons.js";
 import type { ReactNode } from "react";
 import type { HostActivityView } from "../api.js";
 import { useSession } from "../session.js";
 
-/**
- * The host's own activities (GET /my/activities), revamped to full-width
- * rows with the real status pills (Started / Full / Upcoming — the mockup's
- * "Featured" has no backend basis and is not invented). Selecting a row —
- * anywhere on it, including View details — opens the detail page; the
- * backend session, never this toggle, authorizes every action.
- */
 export function HostedActivities({
   activities,
   selectedId,
@@ -31,7 +24,7 @@ export function HostedActivities({
   const hostName = state.status.status === "ready" ? state.status.user.displayName : null;
   return (
     <section aria-label="My activities">
-      <div className="panel-head">
+      <div className="panel-head list-tools">
         <span />
         <button type="button" className="button-ghost" onClick={reload} disabled={loading}>
           {loading ? "Checking…" : "Refresh"}
@@ -51,6 +44,7 @@ export function HostedActivities({
       <ul className="hosted-rows">
         {activities.map((activity) => {
           const status = hostStatus(activity);
+          const offset = zoneOffsetLabel(activity.startsAt, activity.timezone);
           return (
             <li key={activity.id}>
               <button
@@ -62,7 +56,7 @@ export function HostedActivities({
                 <span className="hosted-row-main">
                   <span className="chip-row">
                     <span className="chip"><CalendarIcon /> {chipDateRange(activity.startsAt, activity.endsAt, activity.timezone)}</span>
-                    <span className="chip">{zoneLabel(activity.timezone)}</span>
+                    {offset !== null && <span className="chip">{offset}</span>}
                   </span>
                   <span className="hosted-row-title">{activity.title}</span>
                   <span className="hosted-by">{hostName && <><span className="avatar">{initials(hostName)}</span> Hosted by {hostName}</>}</span>
@@ -71,12 +65,10 @@ export function HostedActivities({
                 <span className="hosted-row-status">
                   <span className={`pill pill-${status.tone}`}>{status.label}</span>
                   <span className="hosted-row-booked">
-                    {activity.confirmedCount} booked ·{" "}
+                    <strong>{activity.confirmedCount} booked</strong>{" · "}
                     {activity.started
-                      ? "activity started"
-                      : activity.capacity - activity.confirmedCount > 0
-                        ? <span className="spots-free">{activity.capacity - activity.confirmedCount} {activity.capacity - activity.confirmedCount === 1 ? "spot" : "spots"} left</span>
-                        : <span className="spots-none">no spots left</span>}
+                      ? <span className="spots-muted">activity started</span>
+                      : <span className={activity.capacity - activity.confirmedCount > 0 ? "spots-free" : "spots-none"}>{activity.capacity - activity.confirmedCount} {activity.capacity - activity.confirmedCount === 1 ? "spot" : "spots"} left</span>}
                   </span>
                   <span className="card-spots-sub">of {activity.capacity}</span>
                 </span>
@@ -84,8 +76,8 @@ export function HostedActivities({
                   <span className="card-price">{formatMoneyCompact(activity.priceMinorUnits, activity.currency)}</span>
                   <span className="card-price-sub">per person</span>
                 </span>
-                <span className={activity.id === selectedId ? "button-dark" : "button-ghost"}>
-                  View details<ArrowRightIcon size={14} />
+                <span className="view-details">
+                  View details<ArrowRightIcon size={18} />
                 </span>
               </button>
             </li>
