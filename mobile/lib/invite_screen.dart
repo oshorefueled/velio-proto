@@ -59,14 +59,19 @@ class _InviteScreenState extends State<InviteScreen>
   }
 
   void _onControllerChanged() {
+    final navigator = Navigator.of(context);
     if (_displayedCode != widget.controller.code) {
       _displayedCode = widget.controller.code;
       _codeField.text = _displayedCode ?? '';
       _home = false;
       _enterCode = false;
       _viewActivity = false;
+      navigator.popUntil((route) => route.isFirst);
     }
-    if (widget.controller.session == null) _enterCode = false;
+    if (widget.controller.session == null) {
+      _enterCode = false;
+      navigator.popUntil((route) => route.isFirst);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _noteDisplayed());
     setState(() {});
   }
@@ -132,21 +137,9 @@ class _InviteScreenState extends State<InviteScreen>
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFF9FAF9),
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          centerTitle: true,
-          shape: const Border(bottom: BorderSide(color: border)),
-          leading: showBack
-              ? IconButton(
-                  key: const Key('back'),
-                  icon: const Icon(Icons.arrow_back),
-                  tooltip: 'Back',
-                  onPressed: back,
-                )
-              : null,
+        appBar: _velioBar(
+          showBack: showBack,
+          onBack: back,
           actions: [
             if (page == _Page.invitation)
               TextButton(
@@ -155,15 +148,6 @@ class _InviteScreenState extends State<InviteScreen>
                 child: const Text('Close invite'),
               ),
           ],
-          title: const Text(
-            'VELIO',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              letterSpacing: 6,
-              fontSize: 17,
-              color: ink,
-            ),
-          ),
         ),
         body: SafeArea(
           child: switch (page) {
@@ -206,6 +190,37 @@ class _InviteScreenState extends State<InviteScreen>
     );
   }
 }
+
+AppBar _velioBar({
+  bool showBack = false,
+  VoidCallback? onBack,
+  List<Widget>? actions,
+}) => AppBar(
+  backgroundColor: Colors.white,
+  surfaceTintColor: Colors.white,
+  elevation: 0,
+  scrolledUnderElevation: 0,
+  centerTitle: true,
+  shape: const Border(bottom: BorderSide(color: border)),
+  leading: showBack
+      ? IconButton(
+          key: const Key('back'),
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Back',
+          onPressed: onBack,
+        )
+      : null,
+  actions: actions,
+  title: const Text(
+    'VELIO',
+    style: TextStyle(
+      fontWeight: FontWeight.w800,
+      letterSpacing: 6,
+      fontSize: 17,
+      color: ink,
+    ),
+  ),
+);
 
 class _PageBody extends StatelessWidget {
   const _PageBody({required this.children, this.bottom});
@@ -450,6 +465,55 @@ class _Section extends StatelessWidget {
           ...children,
         ],
       ),
+    );
+  }
+}
+
+class _HostSections extends StatelessWidget {
+  const _HostSections(this.host);
+
+  final InviteHost host;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Section('Meet your host', [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _Avatar(host.displayName, size: 44),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      host.displayName,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      host.summary.isEmpty
+                          ? 'Host background coming soon.'
+                          : host.summary,
+                      style: const TextStyle(color: inkSoft),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ]),
+        _Section('Previous activities', [
+          if (host.previousActivities.isEmpty)
+            const Text(
+              'No previous activities listed.',
+              style: TextStyle(color: inkSoft),
+            ),
+          for (final previous in host.previousActivities) Text(previous.title),
+        ]),
+      ],
     );
   }
 }
@@ -755,41 +819,7 @@ class _InvitationPage extends StatelessWidget {
                 style: const TextStyle(color: inkSoft, height: 1.5),
               ),
             ]),
-            _Section('Meet your host', [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _Avatar(preview.host.displayName, size: 44),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          preview.host.displayName,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          preview.host.summary.isEmpty
-                              ? 'Host background coming soon.'
-                              : preview.host.summary,
-                          style: const TextStyle(color: inkSoft),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ]),
-            _Section('Previous activities', [
-              if (preview.host.previousActivities.isEmpty)
-                const Text(
-                  'No previous activities listed.',
-                  style: TextStyle(color: inkSoft),
-                ),
-              for (final previous in preview.host.previousActivities)
-                Text(previous.title),
-            ]),
+            _HostSections(preview.host),
           ],
         ),
         if (controller.offlineNotice != null)
@@ -1037,7 +1067,6 @@ class _BookingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final details = controller.savedDetails;
     return _PageBody(
       bottom: OutlinedButton.icon(
         key: const Key('enter-code'),
@@ -1108,48 +1137,133 @@ class _BookingsPage extends StatelessWidget {
                   ),
                 ),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => controller.openSavedBooking(booking),
+                onTap: () {
+                  controller.openSavedBooking(booking);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _BookingDetailsPage(
+                        controller: controller,
+                        booking: booking,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
-        if (details != null && controller.savedReceipt != null)
-          _Surface(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  details.activity.title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const Text('1 spot saved'),
-                Text(
-                  chipDateRange(
-                    details.activity.startsAt,
-                    details.activity.endsAt,
-                    details.activity.timezone,
-                  ),
-                ),
-                Text(
-                  formatMoneyCompact(
-                    details.activity.priceMinorUnits,
-                    details.activity.currency,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(details.activity.description),
-                _Section('What we’ll do', [Text(details.plan.itinerary)]),
-                _Section('Your host', [
-                  Text(details.host.displayName),
-                  Text(details.host.summary),
-                  for (final previous in details.host.previousActivities)
-                    Text(previous.title),
-                ]),
-              ],
-            ),
+      ],
+    );
+  }
+}
+
+class _BookingDetailsPage extends StatelessWidget {
+  const _BookingDetailsPage({required this.controller, required this.booking});
+
+  final InviteController controller;
+  final SavedBookingSummary booking;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final details = controller.savedDetails;
+        final shown =
+            details != null && controller.savedReceipt?.id == booking.id;
+        return Scaffold(
+          backgroundColor: const Color(0xFFF9FAF9),
+          appBar: _velioBar(
+            showBack: true,
+            onBack: () => Navigator.of(context).maybePop(),
           ),
+          body: SafeArea(
+            child: shown
+                ? _BookingDetails(details: details)
+                : controller.savedError != null
+                ? _PageBody(
+                    children: [
+                      _Notice(child: Text(controller.savedError!)),
+                      OutlinedButton(
+                        key: const Key('retry-saved-booking'),
+                        onPressed: () => controller.openSavedBooking(booking),
+                        child: const Text('Try again'),
+                      ),
+                    ],
+                  )
+                : const Center(child: CircularProgressIndicator()),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _BookingDetails extends StatelessWidget {
+  const _BookingDetails({required this.details});
+
+  final ActivityDetails details;
+
+  @override
+  Widget build(BuildContext context) {
+    final activity = details.activity;
+    final offset = zoneOffsetLabel(activity.startsAt, activity.timezone);
+    return _PageBody(
+      children: [
+        _Heading(activity.title, subtitle: activity.description),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _Chip(
+              chipDateRange(
+                activity.startsAt,
+                activity.endsAt,
+                activity.timezone,
+              ),
+              icon: Icons.calendar_today_outlined,
+            ),
+            if (offset != null) _Chip(offset),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _Surface(
+          padding: 12,
+          child: Column(
+            children: [
+              const _FactRow(
+                icon: Icons.check_circle_outline,
+                label: 'Your booking',
+                value: '1 spot saved',
+                valueColor: green,
+              ),
+              _FactRow(
+                icon: Icons.sell_outlined,
+                label: 'Price',
+                value:
+                    '${formatMoneyCompact(activity.priceMinorUnits, activity.currency)} per person',
+              ),
+              if (activity.endsAt != null)
+                _FactRow(
+                  icon: Icons.schedule,
+                  label: 'Duration',
+                  value: durationLabel(activity.startsAt, activity.endsAt!),
+                ),
+              if (activity.country != null)
+                _FactRow(
+                  icon: Icons.public,
+                  label: 'Country',
+                  value: countryName(activity.country!),
+                ),
+            ],
+          ),
+        ),
+        _Section('What we’ll do', [
+          Text(
+            details.plan.itinerary,
+            style: const TextStyle(color: inkSoft, height: 1.5),
+          ),
+        ]),
+        _HostSections(details.host),
       ],
     );
   }
