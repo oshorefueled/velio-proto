@@ -541,3 +541,33 @@ describe("public share routes", () => {
     }
   });
 });
+
+describe("invitation kill switch", () => {
+  it("when creation is disabled, new invitations are refused while issued public and personal links still book", async () => {
+    const host = await establish(treatmentApp, "Kill Switch Host");
+    const activityId = await publish(treatmentApp, host, "Kill Switch Activity", 5);
+    const recipientEmail = `${uniqueKey("kill-recipient")}@example.test`;
+    const create = (app: App, payload: object) =>
+      nextInject(app, { method: "POST", url: `/activities/${activityId}/invites`, headers: { authorization: `Bearer ${host}` }, payload });
+    const publicCode = (await create(treatmentApp, { rail: "public_share" })).json().invite.code as string;
+    const vouchCode = (await create(treatmentApp, { rail: "vouch", recipientEmail })).json().invite.code as string;
+
+    const refused = await create(switchedOffApp, { rail: "vouch", recipientEmail: `${uniqueKey("late")}@example.test` });
+    expect(refused.statusCode).toBe(403);
+    const detail = await nextInject(switchedOffApp, { method: "GET", url: `/activities/${activityId}` });
+    expect(detail.json().invites).toMatchObject({ arm: "treatment", creationEnabled: false });
+
+    const book = async (token: string, inviteCode: string) =>
+      nextInject(switchedOffApp, { method: "POST", url: `/activities/${activityId}/bookings`,
+        headers: { authorization: `Bearer ${token}` }, payload: { operationId: randomUUID(), inviteCode } });
+    const publicGuest = await establish(switchedOffApp, "Public Guest");
+    const publicBooking = await book(publicGuest, publicCode);
+    expect(publicBooking.statusCode).toBe(201);
+    expect(publicBooking.json().booking.attribution).toMatchObject({ rail: "public_share" });
+
+    const recipient = await nextInject(switchedOffApp, { method: "POST", url: "/demo/sessions", payload: { email: recipientEmail, displayName: "Vouch Guest" } });
+    const vouchBooking = await book(recipient.json().session.token, vouchCode);
+    expect(vouchBooking.statusCode).toBe(201);
+    expect(vouchBooking.json().booking.attribution).toMatchObject({ rail: "vouch" });
+  });
+});

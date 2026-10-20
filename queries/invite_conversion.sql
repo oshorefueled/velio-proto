@@ -1,13 +1,34 @@
 -- $1/$2: seven-day half-open cohort; $3: as-of; $4: real|demo.
--- Resolve explicit identity first, otherwise the first immutable device link
--- visible at as-of. Deduplicate BEFORE cohort selection to prevent re-entry.
-WITH opens AS (
-  SELECT e.*, COALESCE(e.user_id::text, vi.user_id::text, 'visitor:' || e.visitor_id) AS person
+-- Person resolution (SPEC C6): explicit account identity first; otherwise
+-- the account entered in the same visit at or after the anonymous event;
+-- for an event without a visit, the next account entered on the same device
+-- within 24 hours; otherwise an explicitly unlinked visitor. An anonymous
+-- event after an entry is a signed-out action and is not linked back. The device's permanent first
+-- link (visitor_identities) is never used, so a later account on a shared
+-- device is not attributed to the first one. Deduplicate BEFORE cohort
+-- selection to prevent re-entry.
+WITH account_entries AS (
+  SELECT ae.user_id, ae.visitor_id, ae.details->>'visitId' AS visit_id, ae.occurred_at
+  FROM events ae
+  WHERE ae.event_name = 'account_entry_completed' AND ae.user_id IS NOT NULL
+    AND ae.occurred_at <= $3::timestamptz
+), resolved_events AS (
+  SELECT e.*, COALESCE(
+    e.user_id::text,
+    (SELECT en.user_id::text FROM account_entries en
+     WHERE e.details->>'visitId' IS NOT NULL AND en.visit_id = e.details->>'visitId'
+       AND en.occurred_at >= e.occurred_at
+     ORDER BY en.occurred_at LIMIT 1),
+    (SELECT en.user_id::text FROM account_entries en
+     WHERE e.details->>'visitId' IS NULL AND e.visitor_id IS NOT NULL AND en.visitor_id = e.visitor_id
+       AND en.occurred_at >= e.occurred_at AND en.occurred_at < e.occurred_at + interval '24 hours'
+     ORDER BY en.occurred_at LIMIT 1),
+    'visitor:' || e.visitor_id) AS person
   FROM events e
-  LEFT JOIN visitor_identities vi ON vi.visitor_id::text = e.visitor_id
-                                AND vi.created_at <= $3::timestamptz
-  WHERE e.event_name = 'invite_opened' AND e.invite_id IS NOT NULL
+  WHERE e.event_name IN ('invite_opened', 'claim_started') AND e.invite_id IS NOT NULL
     AND e.occurred_at <= $3::timestamptz
+), opens AS (
+  SELECT * FROM resolved_events WHERE event_name = 'invite_opened'
 ), first_opens AS (
   SELECT DISTINCT ON (person, invite_id) * FROM opens
   WHERE person IS NOT NULL ORDER BY person, invite_id, occurred_at, event_id
@@ -32,13 +53,10 @@ WITH opens AS (
             WHERE b.user_id::text = o.person AND b.activity_id = o.activity_id
               AND b.created_at >= o.first_open_at AND b.created_at < o.deadline
               AND b.created_at <= $3::timestamptz AND ba.claimed_at <= $3::timestamptz) AS converted,
-    EXISTS (SELECT 1 FROM events cs
-            LEFT JOIN visitor_identities vi ON vi.visitor_id::text = cs.visitor_id
-                                          AND vi.created_at <= $3::timestamptz
+    EXISTS (SELECT 1 FROM resolved_events cs
             WHERE cs.event_name = 'claim_started' AND cs.invite_id = o.invite_id
-              AND COALESCE(cs.user_id::text, vi.user_id::text, 'visitor:' || cs.visitor_id) = o.person
-              AND cs.occurred_at >= o.first_open_at AND cs.occurred_at < o.deadline
-              AND cs.occurred_at <= $3::timestamptz) AS claim_action,
+              AND cs.person = o.person
+              AND cs.occurred_at >= o.first_open_at AND cs.occurred_at < o.deadline) AS claim_action,
     EXISTS (SELECT 1 FROM events ie WHERE ie.event_name = 'account_entry_completed'
             AND ie.user_id::text = o.person
             AND ie.occurred_at >= o.first_open_at AND ie.occurred_at < o.deadline
