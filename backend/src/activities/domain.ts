@@ -97,13 +97,8 @@ export function validateActivityInput(raw: Record<string, unknown>): ActivityInp
   if (typeof endsAt === "string") fields.endsAt = endsAt;
   else if (typeof startsAt !== "string" && endsAt.getTime() <= startsAt.getTime()) fields.endsAt = "must be after the start";
 
-  let country: Country = "GB";
-  if (isPresentString(raw.country) && (COUNTRIES as readonly string[]).includes(raw.country)) {
-    country = raw.country as Country;
-  } else {
-    fields.country = `must be one of ${COUNTRIES.join(", ")}`;
-  }
-  const timezone = COUNTRY_TIMEZONES[country];
+  const country = isPresentString(raw.country) && (COUNTRIES as readonly string[]).includes(raw.country) ? raw.country as Country : null;
+  if (country === null) fields.country = `must be one of ${COUNTRIES.join(", ")}`;
 
   let priceMinorUnits = -1;
   if (typeof raw.priceMinorUnits === "number" && Number.isSafeInteger(raw.priceMinorUnits) && raw.priceMinorUnits >= 0) {
@@ -126,10 +121,10 @@ export function validateActivityInput(raw: Record<string, unknown>): ActivityInp
     fields.spots = `must be a positive whole number no greater than ${MAX_SPOTS}`;
   }
 
-  if (Object.keys(fields).length > 0 || typeof startsAt === "string" || typeof endsAt === "string") {
+  if (Object.keys(fields).length > 0 || typeof startsAt === "string" || typeof endsAt === "string" || country === null) {
     throw new ActivityValidationError(fields);
   }
-  return { title, description, itinerary, startsAt, endsAt, timezone, country, priceMinorUnits, currency, spots };
+  return { title, description, itinerary, startsAt, endsAt, timezone: COUNTRY_TIMEZONES[country], country, priceMinorUnits, currency, spots };
 }
 
 function parseInstant(raw: unknown): Date | string {
