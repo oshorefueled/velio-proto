@@ -21,24 +21,13 @@ function configWith(overrides: Partial<Config> = {}): Config {
     databaseStatementTimeoutMs: 5000,
     bookingLockTimeoutMs: 2000,
     bookingStatementTimeoutMs: 5000,
-    bookingRateLimitPerIdentity: 30,
-    bookingRateLimitPerIp: 10000,
-    bookingRateWindowSeconds: 3600,
     demoSessionTtlHours: 12,
     logLevel: "silent",
     experimentVersion: "test-rollout",
     experimentTreatmentAllocationPercent: 50,
     experimentInviteCreationEnabled: true,
     inviteExpiryHours: 336,
-    inviteRateLimitPerIdentity: 10,
-    inviteRateLimitPerIp: 60,
-    inviteResolveRateLimitPerIp: 120,
-    inviteRateWindowSeconds: 3600,
-    clientEventRateLimitPerIp: 240,
-    clientEventRateWindowSeconds: 3600,
     liveLeaseSeconds: 30,
-    availabilityAckRateLimitPerIp: 240,
-    availabilityAckRateWindowSeconds: 3600,
     livePublishTimeoutMs: 500,
     liveChannelPrefix: "test-live",
     ...overrides,
@@ -98,18 +87,13 @@ async function publish(app: App, token: string, title: string, spots = 5): Promi
 
 let callCounter = 0;
 
-/** Fresh source IP per request: run-persistent Redis windows must not leak across runs. */
+/** Fresh source IP per request. */
 function nextInject(app: App, options: InjectOptions) {
   callCounter += 1;
   return app.inject({
     remoteAddress: `10.${Math.floor(Date.now() / 1000) % 250}.${process.pid % 250}.${callCounter % 250}`,
     ...options,
   });
-}
-
-/** One stable source IP per run for quota-boundary sequences. */
-function boundaryIp(): string {
-  return `10.${Math.floor(Date.now() / 1000) % 250}.${process.pid % 250}.201`;
 }
 
 describe("public share routes", () => {
@@ -515,32 +499,6 @@ describe("public share routes", () => {
     expect(claimed.json().booking.attribution).toMatchObject({ rail: "vouch", generation: 1 });
   });
 
-  it("rate-limits anonymous code resolution per IP", async () => {
-    const app = buildApp(configWith({ inviteResolveRateLimitPerIp: 2 }));
-    // A fresh remote address per run: fixed-window counters persist across
-    // runs within the hour. At least two resolutions are allowed, then the
-    // cap refuses with Retry-After (one count may land in the per-process
-    // fallback after a Redis hiccup, shifting the refusal by one).
-    const remoteAddress = boundaryIp();
-    try {
-      let allowed = 0;
-      let refused: undefined | LightInjectResponse;
-      for (let i = 0; i < 6 && refused === undefined; i += 1) {
-        const response = await nextInject(app, { method: "GET", url: "/invites/ZZZZZZZZZZZZ", remoteAddress });
-        if (response.statusCode === 429) {
-          refused = response;
-        } else {
-          expect(response.statusCode).toBe(404);
-          allowed += 1;
-        }
-      }
-      expect(allowed).toBeGreaterThanOrEqual(2);
-      expect(refused).toBeDefined();
-      expect(Number(refused!.headers["retry-after"])).toBeGreaterThan(0);
-    } finally {
-      await app.close();
-    }
-  });
 });
 
 describe("invitation kill switch", () => {

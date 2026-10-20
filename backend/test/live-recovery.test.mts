@@ -27,12 +27,9 @@ async function startServer(timeoutMs = 500): Promise<ChildProcess> {
     env: {
       ...process.env,
       // The child must read the same database the test asserts against, not
-      // whatever the repo-root .env names, and needs quota headroom that
-      // survives repeated runs from this file (fixed windows persist).
+      // whatever the repo-root .env names.
       DATABASE_URL: appUrl,
       MIGRATION_DATABASE_URL: migrationUrl,
-      BOOKING_RATE_LIMIT_PER_IDENTITY: "1000",
-      BOOKING_RATE_LIMIT_PER_IP: "100000",
       PORT: String(childPort),
       REDIS_URL: `redis://127.0.0.1:${proxyPort}`,
       // A long publication budget widens the commit-before-publish window so
@@ -169,8 +166,8 @@ describe("live availability across process faults", () => {
     const guestId = guestBody.user.id;
     const operationId = randomUUID();
 
-    // Hold a real PUBLISH before forwarding it to Redis. Quota and
-    // subscription commands still flow, so this isolates the crash window.
+    // Hold a real PUBLISH before forwarding it to Redis. Subscription
+    // commands still flow, so this isolates the crash window.
     const held = proxy.holdPublications();
     let responseReturned = false;
     const bookingResponse = httpJson(`${baseUrl}/activities/${activityId}/bookings`, {

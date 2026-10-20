@@ -131,14 +131,6 @@ async function main(): Promise<void> {
     console.log(`  flutter: velio://invite/${code}  (or integration_test/live_viewer_hold_test.dart --dart-define=VELIO_INVITE_CODE=${code})`);
   }
 
-  // Every viewer on one machine acknowledges from one IP; the API refuses
-  // acknowledgements beyond its per-IP quota, which would read as missing.
-  const ackQuota = config.availabilityAckRateLimitPerIp;
-  if (bookings * viewers > ackQuota) {
-    console.log(`  warning: ${bookings * viewers} acknowledgements exceed AVAILABILITY_ACK_RATE_LIMIT_PER_IP=${ackQuota} per window;`);
-    console.log("  viewers sharing one IP will be refused. Start the API with a raised limit and disclose it.");
-  }
-
   const pool: Pool = createPool(config.databaseUrl, { max: 2 });
   const operator: Pool = createPool(config.migrationDatabaseUrl, { max: 1 });
   // The window uses the database clock, the same clock that stamps bookings.
@@ -184,7 +176,6 @@ async function main(): Promise<void> {
         api, viewersDeclared: viewers, viewersRegisteredAtStart: registered, bookings, spacingMs, activityId,
         window: { from, to, clock: "database" },
         failedBookings, unrelatedBookingsInWindow: unrelated,
-        ackQuotaPerIpInScriptEnv: ackQuota,
         hardware: { platform: platform(), arch: arch(), release: release(), cpu: cpus()[0]?.model, logicalCpus: cpus().length, memoryBytes: totalmem() },
         node: process.version,
         note: "Viewers were actual clients; acknowledgements are post-render. Measured on one machine; not a production capacity claim.",

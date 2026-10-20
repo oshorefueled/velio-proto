@@ -121,7 +121,7 @@ Real-stack mobile journeys live in `mobile/integration_test/` and run on a simul
      ┌───────────┬─┴──────────┬────────────┐
  identity    activities    booking      invites / clientevents / metrics / live
      └───────────┴──────┬────┴────────────┘
-              PostgreSQL (source of truth)        Redis (Pub/Sub, quotas)
+              PostgreSQL (source of truth)        Redis (Pub/Sub)
 ```
 
 There is one service. The modules are identity, activities and plans, booking, invitations and attribution, client events, metrics, and the live gateway. All SQL is parameterized through `pg`, and the schema lives in plain SQL migrations. There are no other services, queues or outbox.
@@ -255,10 +255,6 @@ The script waits until all declared viewers are registered and visible. It then 
 
 `/metrics` isn't scoped to one activity, so any other booking in the window, or any failed booking, makes the verdict `incomplete`. The run's activity and accounts are labelled demo afterwards.
 
-All viewers on one machine acknowledge from one IP, and the API refuses acknowledgements beyond `AVAILABILITY_ACK_RATE_LIMIT_PER_IP` (240 per hour by default), counted across the whole hour. Refused acknowledgements show up as missing.
-
-For repeated runs, start the API with a raised limit and disclose it, as below. One run tonight without the override recorded 36 refused acknowledgements; the verdict correctly came out as a failure with `missing_acknowledgements` and a lower-bound p95.
-
 The final run used 3 actual viewers (host web, public web, iOS app), 30 bookings 1.5 s apart, and an API started with these disclosed overrides:
 
 ```bash
@@ -311,7 +307,7 @@ A target is judged (`meets` or `below`) only for a mature, non-empty real cohort
 | Goal | Measurement | Target | Trigger |
 | --- | --- | --- | --- |
 | Never oversell | Oversold activities and stored-count mismatches (`/metrics`, load verification) | 0 | Any oversell or mismatch |
-| Bookings succeed | Successful new eligible attempts ÷ eligible attempts; replays, sell-outs, invalid and quota-rejected attempts separated (`/metrics` `bookings.reliability`) | ≥ 99.5% | A declared run or interval below 99.5% |
+| Bookings succeed | Successful new eligible attempts ÷ eligible attempts; replays, sell-outs and invalid attempts separated (`/metrics` `bookings.reliability`) | ≥ 99.5% | A declared run or interval below 99.5% |
 | Availability feels live | p95 over bookings of the slowest expected viewer, commit to rendered acknowledgement (`/metrics` `availability`) | ≤ 2 s | p95 > 2 s or a missing acknowledgement |
 | Bookers become inviters | `inviter_adoption`: first deliberate invitation for the entry activity within 24 h; share actions reported separately | ≥ 30% | A mature treatment cohort below 30% |
 | Opened invitations convert | `invite_conversion`: first displayed open per person/visitor and invitation; full/expired/used landings stay in the denominator; by rail, channel and landing state | ≥ 25% | A mature treatment cohort below 25% |
@@ -336,13 +332,12 @@ The agreed product changes are recorded in [PLANS.md](PLANS.md) section 3.6. The
 
 - **Accounts and itinerary.** Email account entry and recipient-bound vouches replaced demo contact keys. The shared plan is an explicit itinerary.
 - **Host completion removed.** Host-reported completion, its report and its acceptance checks are gone. The holdout compares booked participants per activity as an intermediate outcome, and occurrence stays unmeasured. The `plans.completed*` columns remain only so committed history isn't rewritten.
-- **Invitation lifetime.** Invitations expire when the activity starts. The old lifetime and creation-quota settings are still accepted but do not gate anything.
+- **Invitation lifetime.** Invitations expire when the activity starts. The old lifetime setting is still accepted but does not gate anything.
 - **Mobile is the primary claim path.** Flutter claiming came first; desktop invitation claiming stays secondary.
 - **Localhost delivery.** Previews are delivered over localhost HTTP; HTTPS and verified link association are deployment follow-up.
 - **Measurement across reconnects.** A reconnecting viewer can now close the update it missed, with the full delay recorded (migration 0014). Before this, a disconnect left the update open forever even after the viewer rendered it.
-- **Flutter snapshot source.** Flutter live snapshots read `GET /activities/:id`. Polling the per-IP-limited invitation resolve every 5 s would lock users out in about 10 minutes.
+- **Flutter snapshot source.** Flutter live snapshots read `GET /activities/:id` rather than re-resolving the invitation.
 - **Anonymous attribution.** Anonymous activity links to its own visit's account entry instead of the device's first-ever account.
-- **Open decision: booking quota.** The booking quota (30 per account and 120 per IP per hour) is still active as a safety limit. It's outside the acceptance checks: reliability excludes quota rejections, and the load run discloses its override. The spec lists booking quotas among behaviour to remove, so this is a decision for the owner.
 
 ## Trade-offs and production follow-up
 

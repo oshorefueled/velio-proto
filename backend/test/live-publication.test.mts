@@ -50,8 +50,6 @@ function uniqueIp(): string {
 function bookingDeps(live?: BookingDeps["live"]): BookingDeps {
   return {
     pool,
-    redis,
-    quota: { perIdentity: 1000, perIp: 100000, windowSeconds: 3600 },
     lockTimeoutMs: 2000,
     statementTimeoutMs: 5000,
     live,

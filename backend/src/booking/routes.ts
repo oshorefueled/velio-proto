@@ -17,8 +17,8 @@ export interface BookingRouteDeps {
 }
 
 /**
- * Thin transport for booking. The actor comes from the session; the request
- * ip feeds the quota; the client's operationId stays stable across retries
+ * Thin transport for booking. The actor comes from the session; the client's
+ * operationId stays stable across retries
  * while the server assigns a fresh attempt id per request. Retries return
  * 200 with the committed booking; a new booking is 201.
  */

@@ -2,7 +2,6 @@ import "../src/config.ts"; // loads the repo-root .env into process.env
 import { beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
-import { Redis } from "ioredis";
 import { createPool } from "../src/db/pool.ts";
 import type { UserSnapshot } from "../src/identity/domain.ts";
 import { establishIdentity, type IdentityDeps } from "../src/identity/service.ts";
@@ -28,23 +27,16 @@ beforeAll(async () => {
   await resetAndMigrate(migrationUrl);
   await clearIdentityData(migrationUrl);
   pool = createPool(appUrl);
-  const redis = new Redis(process.env.REDIS_URL as string);
-  redis.on("error", () => {});
   identity = { pool, sessionTtlHours: 12 };
   activities = { pool, experiment: { allocationPercent: 100, experimentVersion: "t7" } };
-  const quota = { perIdentity: 1000, perIp: 100000, windowSeconds: 3600 };
-  booking = { pool, redis, quota, lockTimeoutMs: 2000, statementTimeoutMs: 5000 };
+  booking = { pool, lockTimeoutMs: 2000, statementTimeoutMs: 5000 };
   invites = {
     pool,
-    redis,
     inviteCreationEnabled: true,
     expiryHours: 336,
-    creationQuota: quota,
-    resolveQuota: { perIp: quota.perIp, windowSeconds: quota.windowSeconds },
   };
   host = (await establishIdentity(identity, { contactKey: uniqueContact("host"), displayName: "Vouch Host" })).user;
   return () => {
-    redis.quit();
     return pool.end();
   };
 });

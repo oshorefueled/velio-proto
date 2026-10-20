@@ -7,11 +7,6 @@ import { buildApp } from "../src/app.ts";
 import type { Config } from "../src/config.ts";
 import { clearIdentityData, resetAndMigrate, urlFor, withClient } from "./support/db.mts";
 
-// Quota override disclosure: the concurrency workload releases 50+ identities
-// from one loopback IP, so the app under test runs with quotas far above the
-// documented defaults. This is deliberate: sold-out and concurrency outcomes
-// must never be disguised as 429s. The dedicated quota boundary lives in
-// booking-routes.test.mts with a tiny limit instead.
 const testConfig: Config = {
   databaseUrl: urlFor("DATABASE_URL", "velio_test"),
   redisUrl: process.env.REDIS_URL as string,
@@ -26,23 +21,12 @@ const testConfig: Config = {
   databaseConnectTimeoutMs: 10000,
   bookingLockTimeoutMs: 2000,
   bookingStatementTimeoutMs: 5000,
-  bookingRateLimitPerIdentity: 500,
-  bookingRateLimitPerIp: 10000,
-  bookingRateWindowSeconds: 3600,
   demoSessionTtlHours: 12,
   experimentVersion: "test-rollout",
   experimentTreatmentAllocationPercent: 50,
   experimentInviteCreationEnabled: true,
   inviteExpiryHours: 336,
-  inviteRateLimitPerIdentity: 10,
-  inviteRateLimitPerIp: 60,
-  inviteResolveRateLimitPerIp: 120,
-  inviteRateWindowSeconds: 3600,
-  clientEventRateLimitPerIp: 240,
-  clientEventRateWindowSeconds: 3600,
   liveLeaseSeconds: 30,
-  availabilityAckRateLimitPerIp: 240,
-  availabilityAckRateWindowSeconds: 3600,
   livePublishTimeoutMs: 500,
   liveChannelPrefix: "test-live",
   logLevel: "silent",
@@ -251,7 +235,6 @@ describe("booking under concurrent demand over real HTTP", () => {
         {
           scenario: "50 identities, 1 remaining spot, real sockets",
           poolMax: testConfig.databasePoolMax,
-          quotaOverride: { perIdentity: 500, perIp: 10000, windowSeconds: 3600 },
           created: created.length,
           soldOut: soldOut.length,
           maxConcurrentInFlight: overlap,

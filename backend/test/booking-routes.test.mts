@@ -10,8 +10,6 @@ const appUrl = urlFor("DATABASE_URL", "velio_test");
 
 let app: Awaited<ReturnType<typeof buildApp>>;
 
-// Quota override disclosed: these route tests exercise the 429 boundary with
-// a tiny identity limit; the concurrency suite overrides limits upward.
 const testConfig: Config = {
   databaseUrl: appUrl,
   redisUrl: process.env.REDIS_URL as string,
@@ -23,23 +21,12 @@ const testConfig: Config = {
   databaseStatementTimeoutMs: 5000,
   bookingLockTimeoutMs: 2000,
   bookingStatementTimeoutMs: 5000,
-  bookingRateLimitPerIdentity: 2,
-  bookingRateLimitPerIp: 10000,
-  bookingRateWindowSeconds: 3600,
   demoSessionTtlHours: 12,
   experimentVersion: "test-rollout",
   experimentTreatmentAllocationPercent: 50,
   experimentInviteCreationEnabled: true,
   inviteExpiryHours: 336,
-  inviteRateLimitPerIdentity: 10,
-  inviteRateLimitPerIp: 60,
-  inviteResolveRateLimitPerIp: 120,
-  inviteRateWindowSeconds: 3600,
-  clientEventRateLimitPerIp: 240,
-  clientEventRateWindowSeconds: 3600,
   liveLeaseSeconds: 30,
-  availabilityAckRateLimitPerIp: 240,
-  availabilityAckRateWindowSeconds: 3600,
   livePublishTimeoutMs: 500,
   liveChannelPrefix: "test-live",
   logLevel: "silent",
@@ -188,22 +175,6 @@ describe("POST /activities/:id/bookings", () => {
     // The booking lookup has nothing to find for an unknown activity.
     expect(me.statusCode).toBe(404);
     expect(me.json().error.code).toBe("booking_not_found");
-  });
-
-  it("applies the identity quota boundary: allowed, allowed, then 429 with Retry-After", async () => {
-    const token = await establish("Quota Booker");
-    const first = await establish("Quota Target Host");
-    const second = await establish("Quota Second Host");
-
-    const allowed1 = await book(token, await publish(first, 1));
-    const allowed2 = await book(token, await publish(second, 1));
-    expect(allowed1.statusCode).toBe(201);
-    expect(allowed2.statusCode).toBe(201);
-
-    const third = await book(token, await publish(first, 1));
-    expect(third.statusCode).toBe(429);
-    expect(third.json().error.code).toBe("request_limit");
-    expect(Number(third.headers["retry-after"])).toBeGreaterThan(0);
   });
 });
 

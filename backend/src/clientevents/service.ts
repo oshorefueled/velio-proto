@@ -1,10 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import type { Redis } from "ioredis";
 import { appendEvent } from "../events/append.js";
 import { ActivityNotFoundError } from "../activities/domain.js";
 import { InviteNotFoundError, normalizeCode } from "../invites/domain.js";
-import { consumeFixedWindowQuota, type QuotaLimits } from "../ratelimit.js";
 import type { UserSnapshot } from "../identity/domain.js";
 import {
   EventConflictError,
@@ -26,9 +24,6 @@ import {
 
 export interface ClientEventsDeps {
   pool: Pool;
-  redis: Redis;
-  /** Finite observation quota per IP within the window (PLANS.md 5.2). */
-  quota: Pick<QuotaLimits, "perIp" | "windowSeconds">;
 }
 
 export interface RecordedClientEvent {
@@ -101,12 +96,6 @@ export async function recordClientEvent(
   input: { ip: string; session?: UserSnapshot },
 ): Promise<RecordedClientEvent> {
   const session = input.session;
-  await consumeFixedWindowQuota(deps.redis, {
-    scope: "client-event",
-    ip: input.ip,
-    userId: session?.id,
-    limits: { perIdentity: deps.quota.perIp, perIp: deps.quota.perIp, windowSeconds: deps.quota.windowSeconds },
-  });
 
   const payloadHash = payloadHashOf(parsed, session);
   const dedupKey = `client_event:${parsed.eventId}`;

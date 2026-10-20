@@ -5,16 +5,9 @@ import { loadConfig } from "../src/config.ts";
 import { resetAndMigrate, urlFor, withClient } from "./support/db.mts";
 
 const migrationUrl = urlFor("MIGRATION_DATABASE_URL", "velio_test");
-// Quota override disclosure: the suite's booking workloads share one loopback
-// IP fixed window, so this app runs with booking quotas far above the
-// documented defaults — saved and sold-out outcomes must never be disguised as
-// 429s. The dedicated quota boundary lives in booking-routes.test.mts with a
-// tiny limit instead.
 const app = buildApp({
   ...loadConfig(process.env),
   databaseUrl: urlFor("DATABASE_URL", "velio_test"),
-  bookingRateLimitPerIdentity: 500,
-  bookingRateLimitPerIp: 10000,
   logLevel: "silent",
 });
 beforeAll(() => resetAndMigrate(migrationUrl));

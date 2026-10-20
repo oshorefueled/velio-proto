@@ -1,7 +1,6 @@
 import "../src/config.ts"; // loads the repo-root .env into process.env
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
-import { Redis } from "ioredis";
 import { createPool } from "../src/db/pool.ts";
 import type { UserSnapshot } from "../src/identity/domain.ts";
 import { establishIdentity } from "../src/identity/service.ts";
@@ -12,14 +11,12 @@ import { ForbiddenError } from "../src/activities/domain.ts";
 import { publishActivity, type ActivitiesDeps } from "../src/activities/service.ts";
 import { bookActivity } from "../src/booking/service.ts";
 import { createPublicShare, resolveInvite, type InvitesDeps } from "../src/invites/service.ts";
-import { RateLimitError } from "../src/ratelimit.js";
 import { clearIdentityData, resetAndMigrate, urlFor, withClient } from "./support/db.mts";
 
 const migrationUrl = urlFor("MIGRATION_DATABASE_URL", "velio_test");
 const appUrl = urlFor("DATABASE_URL", "velio_test");
 
 let pool: Pool;
-let redis: Redis;
 let activities: ActivitiesDeps;
 let invites: InvitesDeps;
 let invitesSwitchedOff: InvitesDeps;
@@ -30,23 +27,16 @@ beforeAll(async () => {
   await resetAndMigrate(migrationUrl);
   await clearIdentityData(migrationUrl);
   pool = createPool(appUrl);
-  redis = new Redis(process.env.REDIS_URL as string);
-  redis.on("error", () => {});
-  const quota = { perIdentity: 1000, perIp: 100000, windowSeconds: 3600 };
   activities = { pool, experiment: { allocationPercent: 50, experimentVersion: "t6" } };
   const base = {
     pool,
-    redis,
     expiryHours: 336,
-    creationQuota: quota,
-    resolveQuota: { perIp: quota.perIp, windowSeconds: quota.windowSeconds },
   };
   invites = { ...base, inviteCreationEnabled: true };
   invitesSwitchedOff = { ...base, inviteCreationEnabled: false };
   host = (await establishIdentity({ pool, sessionTtlHours: 12 }, { contactKey: uniqueKey("t6-host"), displayName: "Invite Host" })).user;
   outsider = (await establishIdentity({ pool, sessionTtlHours: 12 }, { contactKey: uniqueKey("t6-out"), displayName: "Outsider" })).user;
   return () => {
-    redis.quit();
     return pool.end();
   };
 });
@@ -163,24 +153,16 @@ describe("createPublicShare", () => {
 });
 
 async function bookActivityDirectly(person: UserSnapshot, activityId: string): Promise<void> {
-  const bookingRedis = new Redis(process.env.REDIS_URL as string);
-  bookingRedis.on("error", () => {});
-  try {
-    await bookActivity(
-      {
-        pool,
-        redis: bookingRedis,
-        quota: { perIdentity: 1000, perIp: 100000, windowSeconds: 3600 },
-        lockTimeoutMs: 2000,
-        statementTimeoutMs: 5000,
-      },
-      person,
-      activityId,
-      { ip: "10.9.9.9", operationId: uniqueKey("op") },
-    );
-  } finally {
-    bookingRedis.disconnect();
-  }
+  await bookActivity(
+    {
+      pool,
+      lockTimeoutMs: 2000,
+      statementTimeoutMs: 5000,
+    },
+    person,
+    activityId,
+    { ip: "10.9.9.9", operationId: uniqueKey("op") },
+  );
 }
 
 describe("resolveInvite", () => {
@@ -258,19 +240,5 @@ describe("resolveInvite", () => {
     const fullPreview = await resolveInvite(invites, fullInvite.code, { ip: "10.10.0.6" });
     expect(fullPreview.state).toBe("full");
     expect(fullPreview.activity.remainingSpots).toBe(0);
-  });
-
-  it("applies the per-IP resolution quota", async () => {
-    const limited: InvitesDeps = {
-      ...invites,
-      resolveQuota: { perIp: 2, windowSeconds: 3600 },
-    };
-    // Two consumed attempts (unknown codes refuse, but the counter runs on
-    // every resolution); the third must be refused with a retry delay.
-    await resolveInvite(limited, "ZZZZZZZZZZZZ", { ip: "10.11.0.1" }).catch(() => {});
-    await resolveInvite(limited, "ZZZZZZZZZZZZ", { ip: "10.11.0.1" }).catch(() => {});
-    const err = await resolveInvite(limited, "ZZZZZZZZZZZZ", { ip: "10.11.0.1" }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(RateLimitError);
-    expect((err as RateLimitError).retryAfterSeconds).toBeGreaterThan(0);
   });
 });

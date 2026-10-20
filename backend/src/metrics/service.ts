@@ -1,6 +1,4 @@
 import type { Pool } from "pg";
-import type { Redis } from "ioredis";
-import { consumeFixedWindowQuota, type QuotaLimits } from "../ratelimit.js";
 import type { PublicationStats } from "../live/publication.js";
 import { ValidationError } from "../identity/domain.js";
 import { ActivityNotFoundError } from "../activities/domain.js";
@@ -31,9 +29,6 @@ import { AckRejectedError, type ParsedAvailabilityAck } from "./domain.js";
 
 export interface MetricsDeps {
   pool: Pool;
-  redis: Redis;
-  /** Finite acknowledgement quota per IP within the window (PLANS 5.2). */
-  ackQuota: Pick<QuotaLimits, "perIp" | "windowSeconds">;
 }
 
 export interface RecordedAck {
@@ -49,12 +44,6 @@ export async function recordAvailabilityAck(
   ack: ParsedAvailabilityAck,
   input: { ip: string },
 ): Promise<RecordedAck> {
-  await consumeFixedWindowQuota(deps.redis, {
-    scope: "availability-ack",
-    ip: input.ip,
-    limits: { perIdentity: deps.ackQuota.perIp, perIp: deps.ackQuota.perIp, windowSeconds: deps.ackQuota.windowSeconds },
-  });
-
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
@@ -353,7 +342,7 @@ export async function buildBookingHealth(
   const created = outcomes.created ?? 0;
   // Eligible = a valid request that reached the capacity decision: success,
   // lock timeout, classified failure and unknown-availability failure.
-  // Replays, sell-outs, invalid/unauthorized input and quota rejections are
+  // Replays, sell-outs and invalid/unauthorized input are
   // excluded and shown separately (PLANS.md 4.2). Unknown-availability
   // server errors stay in the denominator as failures until classified.
   const eligible = created + (outcomes.lock_timeout ?? 0) + (outcomes.failed ?? 0) + (outcomes.commit_unknown ?? 0);
@@ -388,7 +377,6 @@ export async function buildBookingHealth(
             (outcomes.invite_not_found ?? 0) +
             (outcomes.invite_expired ?? 0) +
             (outcomes.invite_recipient_mismatch ?? 0) + (outcomes.invite_used ?? 0),
-          quotaRejections: outcomes.rate_limited ?? 0,
         },
       },
       oversellActivities: consistency.oversellActivities,
