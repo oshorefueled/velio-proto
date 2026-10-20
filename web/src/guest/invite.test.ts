@@ -156,12 +156,14 @@ function inviteTransport(over: {
   hosted?: Array<{ id: string }>;
   myBooking?: { status: number; json: unknown };
   events?: string[];
+  savedPublic?: ReturnType<typeof inviteOf>;
 }) {
   return async (url: string, init: { method: string; body?: string }) => {
     if (url.endsWith("/client-events")) {
       over.events?.push(init.body ?? "");
       return ok({});
     }
+    if (url.endsWith("/invites/public")) return ok({ invite: over.savedPublic ?? null });
     if (url.endsWith("/invites") && init.method === "POST") {
       if (over.create) return over.create(url, init);
       const input = JSON.parse(init.body ?? "{}");
@@ -209,6 +211,19 @@ it("when a confirmed booker opens the activity, the invite card follows the book
   expect(shareActions(events)).toHaveLength(0);
 });
 
+it("when a booker reopens an activity they already shared, the saved public link shows without creating or recording anything", async () => {
+  const posts: string[] = [];
+  const events: string[] = [];
+  const savedPublic = inviteOf("public_share", null);
+  await mount(inviteTransport({ myBooking: savedBooking, events, savedPublic, create: (_url, init) => { posts.push(init.body ?? ""); return ok({}, 500); } }), { session: bookerUser });
+  const card = document.querySelector(".invite-card")!;
+  expect(card.textContent).toContain("Public invite");
+  expect(card.querySelector("code")?.textContent).toContain(`?invite=${savedPublic.code}`);
+  expect([...card.querySelectorAll("button")].map((button) => button.textContent)).not.toContain("Or generate a public invite");
+  expect(posts).toHaveLength(0);
+  expect(shareActions(events)).toHaveLength(0);
+});
+
 it("when the invites view is requested by URL, the activity page shows instead of a separate invites page", async () => {
   await mount(inviteTransport({ myBooking: savedBooking }), { session: bookerUser, search: "?activity=a&view=invites" });
   expect(document.querySelector("#guest-detail-heading")?.textContent).toBe("Activity a");
@@ -242,7 +257,8 @@ it("when the owning host invites an email, a personal invitation bound to it is 
   await settle();
   expect(postBodies).toEqual([JSON.stringify({ rail: "vouch", recipientEmail: "friend@example.test" })]);
   const card = document.querySelector(".invite-card")!.textContent ?? "";
-  expect(card).toContain("Invitation saved for friend@example.test — only that email can use it.");
+  expect(card).toContain("Invite created for friend@example.test");
+  expect(card).not.toContain("only that email can use it");
   expect(card).toContain("http://localhost:3000/?invite=0ABCDEFHJKM2");
   expect(card).toContain("Copy");
 });
@@ -337,13 +353,13 @@ it("when creation fails before an answer, the contact is kept, no phantom invita
   await settle();
   const bodyAfterFailure = document.body.textContent ?? "";
   expect(bodyAfterFailure).toContain("cannot tell whether the invitation was saved");
-  expect(bodyAfterFailure).not.toContain("Invitation saved");
+  expect(bodyAfterFailure).not.toContain("Invite created");
   expect(bodyAfterFailure).not.toContain("0ABCDEFHJKM2");
   expect((document.querySelector("#vouch-contact") as HTMLInputElement).value).toBe("friend@example.test");
   fail = false;
   await click("Try again");
   await settle();
-  expect(document.body.textContent).toContain("Invitation saved");
+  expect(document.body.textContent).toContain("Invite created");
   expect(postBodies).toHaveLength(2);
 });
 
@@ -355,7 +371,7 @@ it("when the contact changes during creation, the delayed invitation cannot repl
   await fillContact("another@example.test");
   await act(async () => pending.resolve(ok({ invite: inviteOf("vouch", "friend@example.test") }, 201)));
   await settle();
-  expect(document.body.textContent).not.toContain("Invitation saved");
+  expect(document.body.textContent).not.toContain("Invite created");
   expect((document.querySelector("#vouch-contact") as HTMLInputElement).value).toBe("another@example.test");
 });
 
@@ -389,7 +405,7 @@ it("when a late 401 arrives after an identity switch, the newer session stays in
   const body = document.body.textContent ?? "";
   expect(body).toContain("Second");
   expect(body).not.toContain("Your session expired");
-  expect(body).not.toContain("Invitation saved");
+  expect(body).not.toContain("Invite created");
 });
 
 it("when creation is rate limited, another submit waits until Retry-After elapses and preserves the contact", async () => {

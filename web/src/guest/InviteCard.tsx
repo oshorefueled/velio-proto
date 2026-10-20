@@ -49,6 +49,15 @@ export function InviteCard({
   const [copied, setCopied] = useState<Rail | null>(null);
   const [copyUnavailable, setCopyUnavailable] = useState(false);
   useEffect(() => {
+    if (sessionToken === null) return;
+    void authorized((api, token) => api.getPublicInvite(token, activityId))
+      .then((invite) => {
+        if (!mounted.current || invite === null || invite.activityId !== activityId) return;
+        setPublicInvite((current) => current ?? invite);
+      })
+      .catch(() => {});
+  }, [activityId, sessionToken]);
+  useEffect(() => {
     if (retryAt === null) return;
     const timer = window.setTimeout(() => updateClock((value) => value + 1), Math.max(0, retryAt - Date.now()));
     return () => window.clearTimeout(timer);
@@ -207,7 +216,7 @@ export function InviteCard({
         </div>
       )}
       {vouchInvite !== null && <>
-        <p className="notice notice-good" role="status">Invitation saved for {vouchInvite.recipientEmail ?? "your recipient"} — only that email can use it.</p>
+        <p className="notice notice-good" role="status">Invite created for {vouchInvite.recipientEmail ?? "your recipient"}</p>
         {savedLink(vouchInvite, "vouch")}
       </>}
       <hr className="invite-divider" />

@@ -232,6 +232,21 @@ export async function createPublicShare(
   return createInvite(deps, creator, activityId, { ...input, rail: "public_share" });
 }
 
+export async function getPublicShare(
+  deps: InvitesDeps,
+  creator: { id: string },
+  activityId: unknown,
+): Promise<InviteView | null> {
+  if (!isActivityId(activityId)) {
+    throw new ActivityNotFoundError();
+  }
+  const result = await deps.pool.query<InviteRow>(
+    "SELECT * FROM invites WHERE creator_id=$1 AND activity_id=$2 AND rail='public_share'",
+    [creator.id, activityId],
+  );
+  return result.rows[0] ? inviteView(result.rows[0]) : null;
+}
+
 /**
  * Anonymous preview: activity, inviter display name, public rail, expiry and
  * current availability with a readable lifecycle state. Resolving an invite

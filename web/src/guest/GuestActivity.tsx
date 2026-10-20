@@ -20,6 +20,7 @@ function BookingControls({
   onCheckAgain,
   reviewing,
   onReview,
+  onCancel,
 }: {
   booking: BookingState;
   detail: ActivityDetailView;
@@ -28,6 +29,7 @@ function BookingControls({
   onCheckAgain: () => void;
   reviewing: boolean;
   onReview: () => void;
+  onCancel: () => void;
 }): ReactNode {
   const { state } = useSession();
   const phase = booking.phase;
@@ -147,12 +149,18 @@ function BookingControls({
   }
   if (!ready) {
     if (state.status.status === "credential-lost") return null;
-    return <IdentityPanel contextNote="Your checkout is kept." />;
+    return (
+      <>
+        <IdentityPanel contextNote="Your checkout is kept." />
+        <button type="button" className="button-ghost" onClick={onCancel}>Cancel</button>
+      </>
+    );
   }
   return (
     <div className="booking-panel">
       <button type="button" className="button-primary book-cta" onClick={onBook}>Confirm one spot</button>
       <p className="hint">Your spot is confirmed once your booking is saved.</p>
+      <button type="button" className="button-ghost" onClick={onCancel}>Cancel</button>
     </div>
   );
 }
@@ -330,13 +338,8 @@ export function GuestActivity({
   const offset = zoneOffsetLabel(detail.startsAt, detail.timezone);
 
   return (
-    <section
-      className="activity-page"
-      aria-labelledby={reviewing ? undefined : "guest-detail-heading"}
-      aria-label={reviewing ? "Checkout" : "Activity"}
-    >
+    <section className="activity-page" aria-labelledby="guest-detail-heading">
       {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
-      {reviewing && <button type="button" className="button-ghost" onClick={() => setReviewing(false)}>Back to activity</button>}
       <div className="detail-layout">
         <div className="detail-head">
           <h1 className="detail-title" id="guest-detail-heading" ref={heading} tabIndex={-1}>{detail.title}</h1>
@@ -392,39 +395,38 @@ export function GuestActivity({
                 }}
                 reviewing={reviewing}
                 onReview={() => setReviewing(true)}
+                onCancel={() => setReviewing(false)}
               />
             )}
           </div>
-          {(isOwner || currentBooking?.phase.kind === "confirmed") && !reviewing && (
+          {(isOwner || currentBooking?.phase.kind === "confirmed") && (
             <InviteCard key={`${activityId}:${sessionToken}`} activityId={activityId} capabilities={capabilities} started={detail.started} onRefused={() => setRefresh((value) => value + 1)} />
           )}
-          {isOwner && !reviewing && <div className="aside-card"><Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} /></div>}
+          {isOwner && <div className="aside-card"><Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} /></div>}
         </aside>
         <div className="detail-main">
-          {!reviewing && <>
-            <section className="detail-section">
-              <h2>About this activity</h2>
-              <p className="activity-prose">{detail.description}</p>
-            </section>
-            <section className="detail-section">
-              <h2>What we&rsquo;ll do</h2>
-              <p className="activity-prose">{detail.itinerary}</p>
-            </section>
-            <section className="detail-section">
-              <h2>Meet your host</h2>
-              <div className="host-card">
-                <span className="avatar avatar-large">{initials(detail.hostDisplayName)}</span>
-                <div className="host-identity">
-                  <div className="host-name">{detail.hostDisplayName}</div>
-                  <div className="host-role">Host</div>
-                </div>
-                <p className="host-summary">{detail.host?.summary || "This host has not added a background yet."}</p>
+          <section className="detail-section">
+            <h2>About this activity</h2>
+            <p className="activity-prose">{detail.description}</p>
+          </section>
+          <section className="detail-section">
+            <h2>What we&rsquo;ll do</h2>
+            <p className="activity-prose">{detail.itinerary}</p>
+          </section>
+          <section className="detail-section">
+            <h2>Meet your host</h2>
+            <div className="host-card">
+              <span className="avatar avatar-large">{initials(detail.hostDisplayName)}</span>
+              <div className="host-identity">
+                <div className="host-name">{detail.hostDisplayName}</div>
+                <div className="host-role">Host</div>
               </div>
-            </section>
-          </>}
+              <p className="host-summary">{detail.host?.summary || "This host has not added a background yet."}</p>
+            </div>
+          </section>
         </div>
       </div>
-      {!reviewing && <section className="detail-section previous-section">
+      <section className="detail-section previous-section">
         <h2>Previous activities</h2>
         {detail.host?.previousActivities.length ? (
           <ul className="previous-grid">
@@ -436,7 +438,7 @@ export function GuestActivity({
             ))}
           </ul>
         ) : <p className="hint">No previous activities yet.</p>}
-      </section>}
+      </section>
     </section>
   );
 }
