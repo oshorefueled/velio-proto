@@ -1,17 +1,33 @@
-import { formatMoney } from "../money.js";
+import { formatMoneyCompact } from "../money.js";
+import { chipDateTime, initials, zoneLabel } from "../present.js";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { PublicActivityView } from "../api.js";
 import { compareVersions } from "../live/availability.js";
 import { useSession } from "../session.js";
+import { ArrowRightIcon, CalendarIcon } from "../icons.js";
 
 /**
- * Public activity browse (issue #15, US02): the list loads and stays
- * selectable before any identity selection. A failed load means availability
- * is unknown — never zero — so the error state offers Retry instead of
- * facts. Selection is the app's single selected activity (URL-persistent).
+ * Public activity browse (issue #15, US02), revamped to the explore card
+ * grid: the list loads and stays selectable before any identity selection.
+ * A failed load means availability is unknown — never zero — so the error
+ * state offers Retry instead of facts. Selection is the app's single
+ * selected activity (URL-persistent) and opens the full detail page.
  */
 
+function hostFirstName(hostDisplayName: string): string {
+  return hostDisplayName.split(" · ")[0];
+}
 
+function CardSpots({ activity }: { activity: PublicActivityView }): ReactNode {
+  if (activity.started) {
+    return <span className="card-spots">Started<span className="card-spots-sub">bookings closed</span></span>;
+  }
+  if (activity.remainingSpots > 0) {
+    const noun = activity.remainingSpots === 1 ? "spot" : "spots";
+    return <span className="card-spots"><span className="spots-free">{activity.remainingSpots} {noun} left</span><span className="card-spots-sub">of {activity.capacity}</span></span>;
+  }
+  return <span className="card-spots"><span className="spots-none">No spots left</span><span className="card-spots-sub">of {activity.capacity}</span></span>;
+}
 
 export function ActivityBrowser({
   selectedId,
@@ -53,9 +69,11 @@ export function ActivityBrowser({
   const loading = activities === null && error === null;
 
   return (
-    <section className="panel browse-panel" aria-labelledby="browse-heading">
+    <section aria-label="Explore activities">
       <div className="panel-head">
-        <h2 id="browse-heading">Browse activities</h2>
+        <span className="hint" aria-busy={loading || undefined}>
+          {loading ? "Loading activities — availability unknown until they arrive…" : ""}
+        </span>
         <button
           type="button"
           className="button-ghost"
@@ -65,7 +83,6 @@ export function ActivityBrowser({
           {loading ? "Checking…" : "Refresh"}
         </button>
       </div>
-      {loading && <p className="hint" aria-busy="true">Loading activities — availability unknown until they arrive…</p>}
       {error !== null && (
         <div className="notice notice-warn" role="alert">
           {error} Availability is unknown, not zero.{" "}
@@ -77,7 +94,7 @@ export function ActivityBrowser({
       {!loading && error === null && activities !== null && activities.length === 0 && (
         <p className="hint">Nothing published yet — check back soon.</p>
       )}
-      <ul className="browse-list">
+      <ul className="activity-grid">
         {(activities ?? []).map((loaded) => {
           const activity =
             live !== null && live.activityId === loaded.id && compareVersions(live.version, loaded.availabilityVersion) > 0
@@ -87,24 +104,22 @@ export function ActivityBrowser({
           <li key={activity.id}>
             <button
               type="button"
-              className={`browse-item${activity.id === selectedId ? " selected" : ""}`}
+              className={`activity-card${activity.id === selectedId ? " selected" : ""}`}
               onClick={() => onSelect(activity.id)}
               aria-current={activity.id === selectedId ? "true" : undefined}
             >
-              <span className="browse-title">{activity.title}</span>
-              <span className="browse-meta">
-                {activity.hostDisplayName} ·{" "}
-                {new Intl.DateTimeFormat(undefined, {
-                  dateStyle: "medium",
-                  timeStyle: "short",
-                  timeZone: activity.timezone,
-                }).format(new Date(activity.startsAt))}{" "}
-                ({activity.timezone}) · {formatMoney(activity.priceMinorUnits, activity.currency)} ·{" "}
-                {activity.started
-                  ? "started"
-                  : activity.remainingSpots > 0
-                    ? `${activity.remainingSpots} of ${activity.capacity} spots left`
-                    : "full"}
+              <span className="chip-row">
+                <span className="chip"><CalendarIcon /> {chipDateTime(activity.startsAt, activity.timezone)}</span>
+                <span className="chip">{zoneLabel(activity.timezone)}</span>
+              </span>
+              <span className="card-title">{activity.title}</span>
+              <span className="hosted-by"><span className="avatar">{initials(activity.hostDisplayName)}</span> Hosted by {hostFirstName(activity.hostDisplayName)}</span>
+              {activity.description && <span className="card-desc">{activity.description}</span>}
+              <span className="card-foot">
+                <span className="card-price">{formatMoneyCompact(activity.priceMinorUnits, activity.currency)}<span className="card-price-sub">per person</span></span>
+                <span className="card-separator" />
+                <CardSpots activity={activity} />
+                <span className="card-arrow button-icon"><ArrowRightIcon /></span>
               </span>
             </button>
           </li>

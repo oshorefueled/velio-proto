@@ -51,6 +51,8 @@ export interface ActivityView {
   bookedCount: number;
   remainingSpots: number;
   availabilityVersion: string;
+  /** "closed" once started, "full" when no spots remain, else "available". */
+  bookingState?: "available" | "full" | "closed";
   planId?: string;
 }
 
@@ -73,6 +75,7 @@ export interface PublicActivityView {
   id: string;
   hostId: string;
   title: string;
+  description?: string;
   startsAt: string;
   timezone: string;
   priceMinorUnits: number;
