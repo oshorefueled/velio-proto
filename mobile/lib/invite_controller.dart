@@ -667,7 +667,7 @@ class InviteController extends ChangeNotifier {
         await _credentialLost(token: session.token);
         return;
       }
-      _savedError = 'Could not open this saved booking. Select it to retry.';
+      _savedError = 'Could not open this saved booking.';
     }
     if (run != _savedRun) return;
     _savedBusy = false;
