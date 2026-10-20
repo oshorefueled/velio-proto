@@ -242,7 +242,8 @@ it("when the owning host invites an email, a personal invitation bound to it is 
   await settle();
   expect(postBodies).toEqual([JSON.stringify({ rail: "vouch", recipientEmail: "friend@example.test" })]);
   const card = document.querySelector(".invite-card")!.textContent ?? "";
-  expect(card).toContain("Invitation saved for friend@example.test — only that email can use it.");
+  expect(card).toContain("Invite created for friend@example.test");
+  expect(card).not.toContain("only that email can use it");
   expect(card).toContain("http://localhost:3000/?invite=0ABCDEFHJKM2");
   expect(card).toContain("Copy");
 });
@@ -337,13 +338,13 @@ it("when creation fails before an answer, the contact is kept, no phantom invita
   await settle();
   const bodyAfterFailure = document.body.textContent ?? "";
   expect(bodyAfterFailure).toContain("cannot tell whether the invitation was saved");
-  expect(bodyAfterFailure).not.toContain("Invitation saved");
+  expect(bodyAfterFailure).not.toContain("Invite created");
   expect(bodyAfterFailure).not.toContain("0ABCDEFHJKM2");
   expect((document.querySelector("#vouch-contact") as HTMLInputElement).value).toBe("friend@example.test");
   fail = false;
   await click("Try again");
   await settle();
-  expect(document.body.textContent).toContain("Invitation saved");
+  expect(document.body.textContent).toContain("Invite created");
   expect(postBodies).toHaveLength(2);
 });
 
@@ -355,7 +356,7 @@ it("when the contact changes during creation, the delayed invitation cannot repl
   await fillContact("another@example.test");
   await act(async () => pending.resolve(ok({ invite: inviteOf("vouch", "friend@example.test") }, 201)));
   await settle();
-  expect(document.body.textContent).not.toContain("Invitation saved");
+  expect(document.body.textContent).not.toContain("Invite created");
   expect((document.querySelector("#vouch-contact") as HTMLInputElement).value).toBe("another@example.test");
 });
 
@@ -389,7 +390,7 @@ it("when a late 401 arrives after an identity switch, the newer session stays in
   const body = document.body.textContent ?? "";
   expect(body).toContain("Second");
   expect(body).not.toContain("Your session expired");
-  expect(body).not.toContain("Invitation saved");
+  expect(body).not.toContain("Invite created");
 });
 
 it("when creation is rate limited, another submit waits until Retry-After elapses and preserves the contact", async () => {

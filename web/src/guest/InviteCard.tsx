@@ -207,7 +207,7 @@ export function InviteCard({
         </div>
       )}
       {vouchInvite !== null && <>
-        <p className="notice notice-good" role="status">Invitation saved for {vouchInvite.recipientEmail ?? "your recipient"} — only that email can use it.</p>
+        <p className="notice notice-good" role="status">Invite created for {vouchInvite.recipientEmail ?? "your recipient"}</p>
         {savedLink(vouchInvite, "vouch")}
       </>}
       <hr className="invite-divider" />
