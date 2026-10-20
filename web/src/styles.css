@@ -1405,6 +1405,15 @@ dialog.overlay::backdrop {
   align-items: center;
 }
 
+.invite-actions:has(.button-primary) {
+  margin-top: 0.9rem;
+}
+
+.invite-actions .button-primary {
+  margin-top: 0;
+  align-self: center;
+}
+
 .invite-landing {
   max-width: 840px;
   margin-inline: auto;
