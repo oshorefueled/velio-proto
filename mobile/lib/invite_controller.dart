@@ -208,6 +208,10 @@ class InviteController extends ChangeNotifier {
 
   Future<void> closeInvite() async {
     if (_claim is ClaimSubmitting) return;
+    if (_identityBusy) {
+      _identityRun += 1;
+      _identityBusy = false;
+    }
     _codeGeneration += 1;
     _claimRun += 1;
     _live?.dispose();

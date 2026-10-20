@@ -1,9 +1,7 @@
 export const TITLE_MAX_LENGTH = 200;
 const MAX_SPOTS = 2147483647;
 const CURRENCIES = new Set<string>(Intl.supportedValuesOf("currency"));
-export const COUNTRIES = ["GB", "IE", "FR", "DE", "NL", "ES", "NG"] as const;
-export type Country = (typeof COUNTRIES)[number];
-const COUNTRY_TIMEZONES: Record<Country, string> = {
+const COUNTRY_TIMEZONES = {
   GB: "Europe/London",
   IE: "Europe/Dublin",
   FR: "Europe/Paris",
@@ -11,7 +9,9 @@ const COUNTRY_TIMEZONES: Record<Country, string> = {
   NL: "Europe/Amsterdam",
   ES: "Europe/Madrid",
   NG: "Africa/Lagos",
-};
+} as const;
+export type Country = keyof typeof COUNTRY_TIMEZONES;
+export const COUNTRIES = Object.keys(COUNTRY_TIMEZONES) as Country[];
 
 export interface ActivityInput {
   itinerary: string;
