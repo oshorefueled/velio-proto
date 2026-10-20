@@ -102,9 +102,9 @@ void main() {
       expect(find.byKey(const Key('claim')), findsNothing);
       await tester.tap(find.byKey(const Key('continue-checkout')));
       await tester.pumpAndSettle();
-      expect(find.text('Review your booking'), findsOneWidget);
+      expect(find.text('Confirm your spot'), findsOneWidget);
       expect(find.text('1 spot'), findsOneWidget);
-      expect(find.textContaining('EUR'), findsWidgets);
+      expect(find.textContaining('€12'), findsWidgets);
       await tester.enterText(
         find.byKey(const Key('contact-field')),
         'guest@example.test',
@@ -136,6 +136,8 @@ void main() {
       await tester.tap(find.byKey(const Key('claim')));
       await tester.pumpAndSettle();
       expect(find.textContaining('Your spot is saved'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('view-bookings')));
+      await tester.pumpAndSettle();
       expect(find.byKey(const Key('saved-booking-b1')), findsOneWidget);
     },
   );
@@ -189,7 +191,7 @@ void main() {
       );
       await tester.tap(find.byKey(const Key('select-identity')));
       await tester.pumpAndSettle();
-      expect(find.text('Saved bookings'), findsOneWidget);
+      expect(find.text('My bookings'), findsOneWidget);
       await tester.tap(find.byKey(const Key('saved-booking-b1')));
       await tester.pumpAndSettle();
       expect(find.text('Meet at the bridge.'), findsOneWidget);
@@ -322,7 +324,7 @@ void main() {
       expect(controller.session, isNull);
       expect(find.text('Walk beside the river.'), findsOneWidget);
       expect(find.text('Meet at the bridge.'), findsOneWidget);
-      expect(find.textContaining('River Host'), findsOneWidget);
+      expect(find.textContaining('River Host'), findsWidgets);
       expect(find.textContaining('already been used'), findsOneWidget);
       expect(
         events
@@ -354,19 +356,20 @@ void main() {
       await tester.pumpAndSettle();
       final body = find.byKey(const Key('preview-card'));
       expect(body, findsOneWidget);
-      final text = tester
-          .widget<Text>(
-            find.descendant(of: body, matching: find.byType(Text)).first,
-          )
-          .data;
-      expect(text, 'Evening walk');
-      expect(find.textContaining('Invited by Inviter Name'), findsOneWidget);
       expect(
-        find.textContaining('Europe/Stockholm'),
+        find.descendant(of: body, matching: find.text('Evening walk')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Inviter Name invited you to join'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Tue, 01 Dec 2026 · 19:00'),
         findsWidgets,
         reason: 'schedule shows the activity timezone, not the device zone',
       );
-      expect(find.textContaining('€12.00'), findsOneWidget);
+      expect(find.textContaining('€12 per person'), findsOneWidget);
       expect(find.textContaining('Invitation expires'), findsOneWidget);
       expect(find.byKey(const Key('availability')), findsOneWidget);
       expect(
@@ -546,13 +549,48 @@ void main() {
       final controller = await mountedController(tester, transport: transport);
       await controller.openCode('CODEBBBB');
       await tester.pumpAndSettle();
-      expect(find.textContaining('· 3 h 30 min'), findsOneWidget);
+      expect(find.text('3 h 30 min'), findsOneWidget);
       expect(find.text('United Kingdom'), findsOneWidget);
       await controller.openCode('CODECCCC');
       await tester.pumpAndSettle();
       expect(find.text('Evening walk'), findsWidgets);
-      expect(find.textContaining('Ends '), findsNothing);
+      expect(find.text('Duration'), findsNothing);
       expect(find.text('United Kingdom'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'back leaves checkout for the invitation, then the invitation for code entry, which can resume it',
+    (tester) async {
+      final transport = FakeTransport();
+      transport.responses['GET /invites/CODEDDDD'] = transport.previewBody(
+        code: 'CODEDDDD',
+      );
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final controller = await mountedController(tester, transport: transport);
+      await controller.openCode('CODEDDDD');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('continue-checkout')));
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm your spot'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('back')));
+      await tester.pumpAndSettle();
+      expect(controller.checkout, isFalse);
+      expect(find.byKey(const Key('continue-checkout')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('back')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('code-field')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('resume-invitation')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('preview-card')), findsOneWidget);
+      expect(
+        transport.requests.where(
+          (r) => r.method == 'POST' && r.path.endsWith('/bookings'),
+        ),
+        isEmpty,
+      );
     },
   );
 }

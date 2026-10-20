@@ -62,7 +62,7 @@ void main() {
     );
     expect(booked!.created, isTrue);
 
-    final expected = '${before.remainingSpots - 1} remaining of ${before.capacity}';
+    final expected = '${before.remainingSpots - 1} of ${before.capacity} spots left';
     await waitFor(tester, () => find.textContaining(expected).evaluate().isNotEmpty, seconds: 5);
     // ignore: avoid_print
     print('LIVE_RENDERED activity=${before.id} version=${controller.preview!.activity.availabilityVersion}');
@@ -71,7 +71,7 @@ void main() {
     if (awaitExternal) {
       // ignore: avoid_print
       print('LIVE_AWAITING_RECOVERY');
-      final recovered = '${before.remainingSpots - 2} remaining of ${before.capacity}';
+      final recovered = '${before.remainingSpots - 2} of ${before.capacity} spots left';
       for (var i = 0; i < 900 && find.textContaining(recovered).evaluate().isEmpty; i++) {
         await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
         await tester.pump();
