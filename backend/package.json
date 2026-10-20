@@ -16,6 +16,8 @@
     "cohorts": "tsx scripts/cohorts.mts",
     "check:startup": "node scripts/startup-check.mjs",
     "acceptance:load": "tsx scripts/acceptance-load.mts",
+    "measure:rendered": "tsx scripts/measure-rendered.mts",
+    "test:reset-db": "tsx scripts/reset-test-db.mts",
     "acceptance:walkthrough": "tsx scripts/acceptance-walkthrough.mts",
     "seed:demo": "tsx scripts/seed-demo.mts"
   },
