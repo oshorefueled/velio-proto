@@ -1,8 +1,12 @@
 # Velio: group bookings, live availability and invitations
 
-A working prototype for booking a spot in a small group activity, keeping availability live on every open screen, and inviting friends through personal or public invitations. It has three parts: one Fastify API (PostgreSQL + Redis), a responsive React web app, and a Flutter app for invited guests.
+A prototype for booking a spot in a small group activity, keeping availability live on every open screen, and inviting friends through personal or public invitations. It has three parts:
 
-The plan behind it is in [PLANS.md](PLANS.md). A scripted demo is in [docs/walkthrough.md](docs/walkthrough.md).
+1. Fastify API (PostgreSQL + Redis)
+2. React web app
+3. Flutter app for invited guests.
+
+The plan behind it is in [PLANS.md](PLANS.md). 
 
 - [Quick start](#quick-start)
 - [Architecture and decisions](#architecture-and-decisions)
@@ -38,7 +42,7 @@ EXPERIMENT_TREATMENT_ALLOCATION_PERCENT=100 npm run seed:demo
 EXPERIMENT_TREATMENT_ALLOCATION_PERCENT=100 npm start     # http://localhost:3001
 ```
 
-`seed:demo` creates a host (`host@velio.test`) with three activities in London time and GBP, one already started, and a booker (`booker@velio.test`) booked into two of them. Secret Speakeasy Tour starts fully open for a live booking. All seeded rows are labelled `dataset='demo'`, so real-cohort reports ignore them. The `100` override puts demo activities in the invitation treatment arm; the default allocation is 10%.
+`seed:demo` creates a host (`host@velio.test`) with three activities in London time and GBP, one already started, and a booker (`booker@velio.test`) booked into two of them. Secret Speakeasy Tour starts fully open for a live booking. All seeded rows are labelled `dataset='demo'`, so the product reports leave them out unless asked to include them. Invitations run as an experiment: by default only 10% of new activities can issue invitations and the rest form the holdout. The `100` override lets every demo activity issue invitations.
 
 **3. Web**
 
@@ -90,14 +94,14 @@ One service with modules for identity, activities and plans, booking, invitation
 **Concurrency: never oversell.** Each booking is one `READ COMMITTED` transaction:
 
 1. Lock the activity row (`SELECT … FOR UPDATE`), with finite lock and statement timeouts.
-2. Return the account's existing booking for this activity if there is one, keeping its original source.
+2. If this account already booked the activity, return that booking. A retry never creates a second booking and keeps the invitation that originally brought the person in.
 3. For an invited claim, check the invitation, the vouch recipient's email and single redemption.
 4. Check the start time on the database clock, then capacity.
 5. Increment `booked_count` and `availability_version`, insert the booking, its attribution and its events, and commit.
 
 Any failure rolls everything back. Unique bookings per account and activity, single vouch redemption and one public invitation per sharing account and activity are also database constraints. Clients send a stable `operationId`; after a lost response they look up the saved booking before posting again, so an uncertain booking never becomes a second one. Row locking keeps capacity, duplicate and invitation checks in one transaction boundary; an atomic conditional update would still need those checks around it, and Redis locks would coordinate outside the database that commits the booking.
 
-**Real-time availability.** After commit, the API publishes `{activityId, version, remainingSpots}` to Redis Pub/Sub; each instance forwards it to the WebSockets watching that activity. Publication can never change a booking's outcome. Web and Flutter follow the same client protocol: subscribe, then fetch a snapshot; apply only newer versions; refetch on reconnect, on returning to the foreground and every 5 s while visible; and acknowledge each version only after it has rendered. Pub/Sub delivers at most once, so snapshots repair anything missed.
+**Real-time availability.** After commit, the API publishes `{activityId, version, remainingSpots}` to Redis Pub/Sub; each instance forwards it to the WebSockets watching that activity. Publication can never change a booking's outcome. Web and Flutter follow the same client protocol: subscribe, then fetch a snapshot; apply only newer versions; refetch on reconnect, on returning to the foreground and every 5 s while visible; and acknowledge each version only after it has rendered, which is how on-screen latency is measured. Pub/Sub delivers at most once, so snapshots repair anything missed.
 
 **Invitations and attribution.**
 
@@ -113,27 +117,26 @@ An account records once how it was acquired (`direct` at generation 0, or a vouc
 
 ## Plan vs. reality
 
-The agreed product changes are recorded in [PLANS.md](PLANS.md) section 3.6. Implementation-level differences:
+The build follows [PLANS.md](PLANS.md). The plan changed in a few places while building, and section 3.6 records each change:
 
-- **Accounts and itinerary.** Email account entry and recipient-bound vouches replaced demo contact keys. The shared plan is an explicit itinerary.
-- **Host completion removed.** Host-reported completion and its report are gone. The holdout compares booked participants per activity as an intermediate outcome; whether plans actually happen stays unmeasured. The `plans.completed*` columns remain so committed history isn't rewritten.
-- **Invitation lifetime.** Invitations expire when the activity starts.
-- **Mobile is the primary claim path.** Flutter claiming came first; desktop claiming stays secondary.
-- **Localhost delivery.** Previews are delivered over localhost HTTP; HTTPS and verified link association are deployment follow-up.
-- **Measurement across reconnects.** A viewer that reconnects can close the update it missed, with the full delay recorded.
-- **Anonymous attribution.** Anonymous activity links to the account entered in its own visit, not the device's first-ever account.
+- **Email accounts instead of a contact picker.** A vouch has to reach the person it was meant for, and a forwarded link alone can't establish that. So accounts are keyed by email, and each vouch is bound to its recipient's email and checked at checkout.
+- **Hosts choose a country, not a timezone.** The activity's timezone follows from the country, so the two can't contradict each other.
+- **Public invites are generated, then copied.** Generating creates the sharer's reusable link; each copy is recorded separately from creation.
+- **Mobile first for claiming.** Invited guests claim in the Flutter app. Claiming on desktop web is follow-up.
+
+**Not built: attendance and plans that actually happen.** The brief asks for hosts to see live attendance, and names plans that actually happen as a core metric. There's no agreed way yet to confirm that someone turned up or that an activity took place, so the host sees live bookings instead. The holdout compares booked participants per activity, and bookings are never counted as attendance. A host-reported "completed" flag was planned and dropped until there's an agreed definition of a plan happening.
 
 ## Trade-offs
 
-Within the 48 hours, capacity correctness, honest measurement, the guest's mobile journey and report correctness came before breadth.
+Within the 48 hours, these came before breadth: never overselling, measurements that report misses instead of hiding them, the invited guest's mobile journey, and reports that compute the goals correctly.
 
 | Area | Prototype choice | Production follow-up |
 | --- | --- | --- |
 | Live delivery | Redis Pub/Sub, at most once, with snapshot repair | A transactional outbox if measured publication failures justify it; alerting |
 | Identity | Unverified email entry; bearer sessions | Real authentication and email verification; abuse controls |
-| Scale | One API instance on one machine; one hot row tested | Multi-instance load and latency runs on production-like hardware |
+| Scale | One API instance on one machine; contention tested on a single activity | Multi-instance load and latency runs on production-like hardware |
 | Reports | Correlated SQL sized for prototype volumes | Materialized cohorts; run on real cohorts before judging the 30% and 25% targets |
-| Experiment | Activity-level holdout, versioned allocation, kill switch | Agree occurrence evidence, power the comparison from baseline data, then run 50/50 |
+| Experiment | Activity-level holdout, versioned allocation, kill switch | Agree how to confirm a plan happened, size the test from baseline data, then run 50/50 |
 | Mobile | Custom-scheme links; simulator verification | Verified HTTPS links, store and deferred install, physical-device haptics |
 | Booking lifecycle | One spot per account; no cancellation | Cancellation, waitlist, host edits with rules for existing bookers |
 
@@ -150,13 +153,13 @@ npm run cohorts -- <report> --start <ISO> --end <ISO> [--as-of <ISO>] [--dataset
 
 | Goal | Report | Target | Improvement trigger |
 | --- | --- | --- | --- |
-| Bookers become inviters | `inviter_adoption`: first deliberate invitation for the entry activity within 24 h | ≥ 30% | A mature treatment cohort below 30% |
-| Opened invitations convert | `invite_conversion`: first displayed open per person and invitation; full, expired and used landings stay in the denominator | ≥ 25% | A mature treatment cohort below 25% |
-| K-factor by rail | `k_factor_by_rail`: accounts acquired by a fixed inviter cohort, vouch vs. public | None set | K declining across cohorts |
-| Causal lift | `holdout_comparison`: booked participants per activity by arm, with CI and difference vs. control | Descriptive | — |
+| Bookers become inviters | `inviter_adoption`: share of new bookers who create an invitation for the activity they booked within 24 hours. Viewing the invite card doesn't count | ≥ 30% | A mature treatment cohort below 30% |
+| Opened invitations convert | `invite_conversion`: share of opened invitations, counted once per person, that end in a claimed spot. Opens of full, expired or used invitations still count | ≥ 25% | A mature treatment cohort below 25% |
+| K-factor by rail | `k_factor_by_rail`: new accounts brought in per existing user, split by vouch and public link | None set | K declining across cohorts |
+| Causal lift | `holdout_comparison`: booked participants per activity, invitation activities vs. the holdout, with confidence intervals | Descriptive | — |
 | Attribution audit | `acquisition_audit`: signup source and generation beside each booking's source | Descriptive | — |
 
-Each report returns its counts, numerators and denominators, 95% intervals and cohort maturity. A target is judged only for a mature, non-empty real cohort; demo and immature runs are marked `not_assessable`. Seeded data proves the plumbing, not real adoption or conversion.
+Each report returns its counts, numerators and denominators, and 95% intervals. Cohorts cover a seven-day window, and a cohort is mature once its observation period has ended. A target is judged only for a mature, non-empty cohort of real users; demo and immature runs are marked `not_assessable`. Seeded data proves the plumbing, not real adoption or conversion.
 
 **SLOs against the prototype.** Observed on 20 October 2026 on an Apple M2 Pro with Docker PostgreSQL and Redis, one API instance, everything on localhost. These are prototype evidence, not production capacity claims.
 
