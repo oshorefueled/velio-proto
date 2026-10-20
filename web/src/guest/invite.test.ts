@@ -309,7 +309,7 @@ it("when the activity is control, creation is switched off or it has started, th
     const card = document.querySelector(".invite-card")!;
     expect(card.textContent).toContain(explanation);
     expect(card.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
-    await click("Or generate a public invite");
+    await click("Show saved public link");
     await settle();
     expect(card.textContent).toContain("http://localhost:3000/?invite=0ABCDEFHJKM2");
     await act(async () => root!.unmount());
@@ -412,4 +412,23 @@ it("when creation is rate limited, another submit waits until Retry-After elapse
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2050)); });
   await click("Invite");
   expect(attempts).toBe(2);
+});
+
+it("when creation is refused because the activity has started, the activity facts refresh and the card shows invitations are closed", async () => {
+  let started = false;
+  let detailFetches = 0;
+  const base = inviteTransport({ myBooking: savedBooking });
+  await mount(async (url, init) => {
+    if (url.endsWith("/invites") && init.method === "POST") { started = true; return ok({ error: { code: "activity_started", message: "Started" } }, 409); }
+    if (url.endsWith("/activities/a")) { detailFetches++; return ok({ activity: detailOf("a", { started }), invites: { eligible: true, canCreateInvites: true, arm: "treatment", experimentVersion: "v1" } }); }
+    return base(url, init);
+  }, { session: bookerUser });
+  const before = detailFetches;
+  await fillContact("friend@example.test");
+  await click("Invite");
+  await settle();
+  expect(detailFetches).toBeGreaterThan(before);
+  const card = document.querySelector(".invite-card")!;
+  expect(card.textContent).toContain("has already started — new invitations are closed");
+  expect(card.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
 });

@@ -21,10 +21,12 @@ export function InviteCard({
   activityId,
   capabilities,
   started,
+  onRefused,
 }: {
   activityId: string;
   capabilities: ActivityDetailView["invites"];
   started: boolean;
+  onRefused: () => void;
 }): ReactNode {
   const { api, state, store, authorized } = useSession();
   const sessionToken = state.status.status === "ready" ? state.status.token : null;
@@ -51,15 +53,6 @@ export function InviteCard({
     const timer = window.setTimeout(() => updateClock((value) => value + 1), Math.max(0, retryAt - Date.now()));
     return () => window.clearTimeout(timer);
   }, [retryAt]);
-  useEffect(() => {
-    operation.current += 1;
-    setPhase({ kind: "idle" });
-    setVouchInvite(null);
-    setPublicInvite(null);
-    setCopied(null);
-    setCopyUnavailable(false);
-    return () => { operation.current += 1; };
-  }, [sessionToken, activityId]);
 
   const changeContact = (value: string): void => {
     if (phase.kind !== "idle" && phase.rail === "vouch") {
@@ -103,15 +96,18 @@ export function InviteCard({
         switch (err.code) {
           case "forbidden":
             setPhase({ kind: "refused", rail, message: "Invitations cannot be created for this activity with your current access." });
+            onRefused();
             return;
           case "validation_error":
             setPhase({ kind: "refused", rail, message: err.message, field: err.fields?.recipientEmail ?? err.fields?.rail });
             return;
           case "activity_started":
             setPhase({ kind: "refused", rail, message: "This activity has already started, so new invitations are closed." });
+            onRefused();
             return;
           case "activity_sold_out":
             setPhase({ kind: "refused", rail, message: "This activity is full — new invitations are closed." });
+            onRefused();
             return;
           case "request_limit":
             setRetryAt(Date.now() + (err.retryAfterSeconds ?? 0) * 1000);
@@ -221,7 +217,7 @@ export function InviteCard({
         <p className="hint">Anyone with the link can book while spots remain.</p>
       </> : (
         <button type="button" className="button-ghost invite-generate" disabled={pending || waiting} onClick={() => create("public_share")}>
-          {pending && phase.rail === "public_share" ? "Generating…" : "Or generate a public invite"}
+          {pending && phase.rail === "public_share" ? "Generating…" : creationClosed ? "Show saved public link" : "Or generate a public invite"}
         </button>
       )}
       {notice("public_share")}

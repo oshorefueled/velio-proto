@@ -318,7 +318,7 @@ export function GuestActivity({
       <section className="activity-page" aria-label="Activity">
         {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
         <div className="notice notice-warn" role="alert">
-          {loadError.replace(/\.?$/, ".")} Availability is unknown, not zero.
+          {loadError.replace(/([^.!?…])$/, "$1.")} Availability is unknown, not zero.
         </div>
         <button type="button" className="button-primary" onClick={() => setRefresh((value) => value + 1)}>
           Retry
@@ -434,7 +434,7 @@ export function GuestActivity({
             </div>}
           </div>
           {(isOwner || currentBooking?.phase.kind === "confirmed") && !reviewing && (
-            <InviteCard key={`${activityId}:${sessionToken}`} activityId={activityId} capabilities={capabilities} started={detail.started} />
+            <InviteCard key={`${activityId}:${sessionToken}`} activityId={activityId} capabilities={capabilities} started={detail.started} onRefused={() => setRefresh((value) => value + 1)} />
           )}
           {isOwner && !reviewing && <div className="aside-card"><Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} /></div>}
         </aside>
