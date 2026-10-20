@@ -75,7 +75,7 @@ async function publish(token: string, capacity: number): Promise<string> {
       title: "Route Kayak",
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 2500,
       currency: "EUR",
       spots: capacity,

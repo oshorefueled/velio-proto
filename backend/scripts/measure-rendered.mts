@@ -115,7 +115,7 @@ async function main(): Promise<void> {
     itinerary: "Meet, walk, return.",
     startsAt: new Date(Date.now() + 4 * 86400000).toISOString(),
     endsAt: new Date(Date.now() + 4 * 86400000 + 2 * 3600 * 1000).toISOString(),
-    timezone: "Africa/Lagos", priceMinorUnits: 500000, currency: "NGN", spots: bookings + 10,
+    country: "NG", priceMinorUnits: 500000, currency: "NGN", spots: bookings + 10,
   }, host);
   if (published.status !== 201) throw new Error(`publication failed: ${published.status}`);
   const activityId = published.json.activity.id as string;

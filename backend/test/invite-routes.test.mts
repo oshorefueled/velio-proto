@@ -85,7 +85,7 @@ async function publish(app: App, token: string, title: string, spots = 5): Promi
       title,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 2500,
       currency: "EUR",
       spots,
@@ -217,7 +217,7 @@ describe("public share routes", () => {
       const returnedToken = returning.json().session.token;
       const list = await nextInject(treatmentApp, { method: "GET", url: "/my/bookings", headers: { authorization: `Bearer ${returnedToken}` } });
       expect(list.json().bookings).toEqual([{ id: claimed.json().booking.id, activityId, planId: invite.planId,
-        activity: expect.objectContaining({ id: activityId, title: "Email checkout", timezone: "UTC" }) }]);
+        activity: expect.objectContaining({ id: activityId, title: "Email checkout", timezone: "Europe/London" }) }]);
       const details = await nextInject(treatmentApp, { method: "GET", url: `/activities/${activityId}` });
       expect(details.json()).toMatchObject({ plan: { id: invite.planId, itinerary: "Meet, explore, return." }, host: { displayName: "Checkout Host" } });
       const receipt = await nextInject(treatmentApp, { method: "GET", url: `/activities/${activityId}/bookings/me`, headers: { authorization: `Bearer ${returnedToken}` } });

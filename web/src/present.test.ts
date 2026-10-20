@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chipDateRange, chipDateTime, countryName, durationLabel, hostStatus, initials, zoneLabel, zoneOffsetLabel } from "./present.js";
+import { chipDateRange, chipDateTime, countryName, durationLabel, hostStatus, initials, zoneOffsetLabel } from "./present.js";
 import { formatMoneyCompact } from "./money.js";
 
 // Revamp mockups 1–4: presentation derivations shared by the redesigned
@@ -19,17 +19,6 @@ describe("initials", () => {
   });
 });
 
-describe("zoneLabel", () => {
-  it("names the zone's city", () => {
-    expect(zoneLabel("Africa/Lagos")).toBe("Lagos time");
-    expect(zoneLabel("America/New_York")).toBe("New York time");
-    expect(zoneLabel("Europe/Stockholm")).toBe("Stockholm time");
-  });
-
-  it("leaves zoneless identifiers alone", () => {
-    expect(zoneLabel("UTC")).toBe("UTC");
-  });
-});
 
 describe("hostStatus", () => {
   it("reports started before anything else", () => {

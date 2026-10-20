@@ -80,7 +80,7 @@ async function publish(
       title: "Sunset Kayaking",
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "Europe/Berlin",
+      country: "DE",
       priceMinorUnits: 4500,
       currency: "EUR",
       spots: 6,
@@ -107,7 +107,7 @@ describe("POST /activities", () => {
         title: "Boundary",
         startsAt: "2099-01-01T10:00:00Z",
         endsAt: "2099-01-01T12:00:00Z",
-        timezone: "UTC",
+        country: "GB",
         priceMinorUnits: 100,
         currency: "USD",
         spots: 2,
@@ -130,6 +130,7 @@ describe("POST /activities", () => {
     ["endsAt", "2099-01-01T09:00:00Z"],
     ["endsAt", "2099-01-01"],
     ["country", "US"],
+    ["country", undefined],
   ])("when %s is %s, returns a field error without publishing", async (field, value) => {
     const host = await establishHost("Validation Host");
     const before = await app.inject({ method: "GET", url: "/activities" }).then((r) => r.json().activities.length);
@@ -141,7 +142,7 @@ describe("POST /activities", () => {
         title: "Validation",
         startsAt: "2099-01-01T10:00:00Z",
         endsAt: "2099-01-01T12:00:00Z",
-        timezone: "UTC",
+        country: "GB",
         priceMinorUnits: 100,
         currency: "USD",
         spots: 2,
@@ -209,7 +210,7 @@ describe("POST /activities", () => {
         title: "",
         startsAt: "not-a-date",
         endsAt: "not-a-date",
-        timezone: "Mars/Olympus",
+        country: "US",
         priceMinorUnits: -5,
         currency: "eur",
         spots: 0,
@@ -220,12 +221,12 @@ describe("POST /activities", () => {
     const body = response.json();
     expect(body.error.code).toBe("validation_error");
     expect(Object.keys(body.error.fields).sort()).toEqual([
+      "country",
       "currency",
       "endsAt",
       "priceMinorUnits",
       "spots",
       "startsAt",
-      "timezone",
       "title",
     ]);
 

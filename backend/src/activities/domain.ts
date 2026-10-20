@@ -1,9 +1,17 @@
 export const TITLE_MAX_LENGTH = 200;
-export const TIMEZONE_MAX_LENGTH = 64;
 const MAX_SPOTS = 2147483647;
 const CURRENCIES = new Set<string>(Intl.supportedValuesOf("currency"));
 export const COUNTRIES = ["GB", "IE", "FR", "DE", "NL", "ES", "NG"] as const;
 export type Country = (typeof COUNTRIES)[number];
+const COUNTRY_TIMEZONES: Record<Country, string> = {
+  GB: "Europe/London",
+  IE: "Europe/Dublin",
+  FR: "Europe/Paris",
+  DE: "Europe/Berlin",
+  NL: "Europe/Amsterdam",
+  ES: "Europe/Madrid",
+  NG: "Africa/Lagos",
+};
 
 export interface ActivityInput {
   itinerary: string;
@@ -12,7 +20,7 @@ export interface ActivityInput {
   startsAt: Date;
   endsAt: Date;
   timezone: string;
-  country: Country | null;
+  country: Country;
   priceMinorUnits: number;
   currency: string;
   spots: number;
@@ -64,15 +72,6 @@ function isPresentString(raw: unknown): raw is string {
   return typeof raw === "string";
 }
 
-export function isValidTimeZone(timezone: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** Validate every publication field, reporting all offending fields at once. */
 export function validateActivityInput(raw: Record<string, unknown>): ActivityInput {
   const fields: Record<string, string> = {};
@@ -98,24 +97,13 @@ export function validateActivityInput(raw: Record<string, unknown>): ActivityInp
   if (typeof endsAt === "string") fields.endsAt = endsAt;
   else if (typeof startsAt !== "string" && endsAt.getTime() <= startsAt.getTime()) fields.endsAt = "must be after the start";
 
-  let country: Country | null = null;
-  if (raw.country !== undefined && raw.country !== null && raw.country !== "") {
-    if (isPresentString(raw.country) && (COUNTRIES as readonly string[]).includes(raw.country)) {
-      country = raw.country as Country;
-    } else {
-      fields.country = `must be one of ${COUNTRIES.join(", ")}`;
-    }
-  }
-
-  let timezone = "";
-  if (isPresentString(raw.timezone)) {
-    timezone = raw.timezone.trim();
-    if (timezone.length < 1 || timezone.length > TIMEZONE_MAX_LENGTH || !isValidTimeZone(timezone)) {
-      fields.timezone = "must be a valid IANA time zone";
-    }
+  let country: Country = "GB";
+  if (isPresentString(raw.country) && (COUNTRIES as readonly string[]).includes(raw.country)) {
+    country = raw.country as Country;
   } else {
-    fields.timezone = "must be a string";
+    fields.country = `must be one of ${COUNTRIES.join(", ")}`;
   }
+  const timezone = COUNTRY_TIMEZONES[country];
 
   let priceMinorUnits = -1;
   if (typeof raw.priceMinorUnits === "number" && Number.isSafeInteger(raw.priceMinorUnits) && raw.priceMinorUnits >= 0) {

@@ -1,10 +1,10 @@
 import { currencyDigits } from "../money.js";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { ApiError, type ActivityView } from "../api.js";
-import { localWallToUtcInstant, isValidTimeZone } from "../schedule.js";
+import { localWallToUtcInstant } from "../schedule.js";
 import { useSession } from "../session.js";
 import { CalendarIcon, ClockIcon, GlobeIcon, GroupIcon, InfoIcon, TagIcon } from "../icons.js";
-import { COUNTRIES, zoneLabel } from "../present.js";
+import { COUNTRIES } from "../present.js";
 
 const CURRENCIES = ["NGN", "EUR", "USD", "GBP", "SEK", "JPY", "KWD"] as const;
 const CURRENCY_NAMES: Record<(typeof CURRENCIES)[number], string> = {
@@ -16,16 +16,6 @@ const CURRENCY_NAMES: Record<(typeof CURRENCIES)[number], string> = {
   JPY: "Japanese Yen",
   KWD: "Kuwaiti Dinar",
 };
-const TIME_ZONES = [
-  "Africa/Lagos",
-  "Europe/Stockholm",
-  "Europe/London",
-  "Europe/Berlin",
-  "America/New_York",
-  "America/Los_Angeles",
-  "Asia/Kolkata",
-  "UTC",
-];
 
 function defaultLocalParts(): { date: string; time: string; endTime: string } {
   const now = new Date(Date.now() + 48 * 3600 * 1000);
@@ -56,19 +46,17 @@ function nextDay(date: string): string {
   return day.toISOString().slice(0, 10);
 }
 
-const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
 export function PublishForm({ onPublished }: { onPublished: (activity: ActivityView) => void }): ReactNode {
   const { authorized } = useSession();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [itinerary, setItinerary] = useState("");
   const [wall, setWall] = useState(defaultLocalParts);
-  const [timeZone, setTimeZone] = useState(browserZone);
   const [spots, setSpots] = useState("4");
   const [priceMinorUnits, setPriceMinorUnits] = useState("15");
   const [currency, setCurrency] = useState<(typeof CURRENCIES)[number]>("GBP");
-  const [country, setCountry] = useState<string>("GB");
+  const [country, setCountry] = useState<(typeof COUNTRIES)[number][0]>("GB");
+  const timeZone = COUNTRIES.find(([code]) => code === country)![2];
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -87,20 +75,17 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
     if (!description.trim()) errors.description = "Describe the activity.";
     if (!itinerary.trim()) errors.itinerary = "Add the shared itinerary.";
     if (title.trim().length === 0) errors.title = "Give the plan a title.";
-    if (!isValidTimeZone(timeZone)) errors.timezone = "Unknown timezone.";
+    try {
+      startsAt = localWallToUtcInstant(`${wall.date}T${wall.time}`, timeZone).toISOString();
+    } catch (err) {
+      errors.startsAt = err instanceof Error ? err.message : "Check the date and time.";
+    }
+    if (wall.endTime === wall.time) errors.endsAt = "The end time must differ from the start time.";
     else {
       try {
-        startsAt = localWallToUtcInstant(`${wall.date}T${wall.time}`, timeZone).toISOString();
+        endsAt = localWallToUtcInstant(`${endsNextDay ? nextDay(wall.date) : wall.date}T${wall.endTime}`, timeZone).toISOString();
       } catch (err) {
-        errors.startsAt = err instanceof Error ? err.message : "Check the date and time.";
-      }
-      if (wall.endTime === wall.time) errors.endsAt = "The end time must differ from the start time.";
-      else {
-        try {
-          endsAt = localWallToUtcInstant(`${endsNextDay ? nextDay(wall.date) : wall.date}T${wall.endTime}`, timeZone).toISOString();
-        } catch (err) {
-          errors.endsAt = err instanceof Error ? err.message : "Check the end time.";
-        }
+        errors.endsAt = err instanceof Error ? err.message : "Check the end time.";
       }
     }
     const spotsNumber = Number(spots);
@@ -124,8 +109,7 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
           itinerary: itinerary.trim(),
           startsAt: startsAt!,
           endsAt: endsAt!,
-          timezone: timeZone,
-          country: country || null,
+          country,
           priceMinorUnits: priceNumber,
           currency,
           spots: spotsNumber,
@@ -263,22 +247,10 @@ export function PublishForm({ onPublished }: { onPublished: (activity: ActivityV
 
             <div className="form-grid-3">
               <div>
-                <label htmlFor="pub-timezone">Timezone</label>
-                <span className="input-icon"><GlobeIcon />
-                  <select id="pub-timezone" value={timeZone} onChange={(event) => setTimeZone(event.target.value)}>
-                    {[...new Set([browserZone, ...TIME_ZONES])].map((zone) => (
-                      <option key={zone} value={zone}>{zoneLabel(zone)}</option>
-                    ))}
-                  </select>
-                </span>
-                {fieldErrors.timezone && <p className="field-error" role="alert">{fieldErrors.timezone}</p>}
-              </div>
-              <div>
                 <label htmlFor="pub-country">Country</label>
                 <span className="input-icon"><GlobeIcon />
-                  <select id="pub-country" value={country} onChange={(event) => setCountry(event.target.value)}>
+                  <select id="pub-country" required value={country} onChange={(event) => setCountry(event.target.value as typeof country)}>
                     {COUNTRIES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-                    <option value="">Not specified</option>
                   </select>
                 </span>
                 {fieldErrors.country && <p className="field-error" role="alert">{fieldErrors.country}</p>}

@@ -42,7 +42,7 @@ try {
       const publication = await request("POST", "/activities", {
         title: fixture.title, description: fixture.description, itinerary: fixture.itinerary,
         startsAt: londonInstant(ahead, fixture.start), endsAt: londonInstant(ahead, fixture.end),
-        timezone: "Europe/London", country: "GB", priceMinorUnits: fixture.priceMinorUnits, currency: "GBP", spots: fixture.spots,
+        country: "GB", priceMinorUnits: fixture.priceMinorUnits, currency: "GBP", spots: fixture.spots,
       }, host.session.token);
       activity = publication.activity;
       await operator.query("UPDATE activities SET dataset='demo' WHERE id=$1", [activity.id]);

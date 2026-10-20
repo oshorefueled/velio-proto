@@ -386,7 +386,7 @@ export class VelioApi {
 
   publishActivity(
     token: string,
-    draft: { title: string; description: string; itinerary: string; startsAt: string; endsAt: string; timezone: string; country: string | null; priceMinorUnits: number; currency: string; spots: number },
+    draft: { title: string; description: string; itinerary: string; startsAt: string; endsAt: string; country: string; priceMinorUnits: number; currency: string; spots: number },
   ): Promise<{ activity: ActivityView; plan: { id: string }; experiment: { arm: string; experimentVersion: string } }> {
     return this.request("POST", "/activities", { body: draft, token }) as never;
   }

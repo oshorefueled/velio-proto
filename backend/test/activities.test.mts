@@ -42,7 +42,7 @@ function validInput(overrides: Partial<Record<string, unknown>> = {}) {
     title: "Sunset Kayaking",
     startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
     endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-    timezone: "Europe/Berlin",
+    country: "DE",
     priceMinorUnits: 4500,
     currency: "EUR",
     spots: 6,
@@ -83,14 +83,36 @@ describe("publishActivity", () => {
     );
   });
 
-  it("keeps an end that crosses midnight and an optional country", async () => {
+  it("keeps an end that crosses midnight", async () => {
     const late = await publishActivity(deps, host, validInput({
       startsAt: "2099-06-01T21:30:00Z", endsAt: "2099-06-02T01:00:00Z", country: "GB",
     }));
     expect(late.activity).toMatchObject({ startsAt: "2099-06-01T21:30:00.000Z", endsAt: "2099-06-02T01:00:00.000Z", country: "GB" });
-    const anywhere = await publishActivity(deps, host, validInput({ country: "" }));
-    expect(anywhere.activity.country).toBeNull();
   });
+
+  it.each([
+    ["GB", "Europe/London"],
+    ["IE", "Europe/Dublin"],
+    ["FR", "Europe/Paris"],
+    ["DE", "Europe/Berlin"],
+    ["NL", "Europe/Amsterdam"],
+    ["ES", "Europe/Madrid"],
+    ["NG", "Africa/Lagos"],
+  ])("when the country is %s, saves the timezone %s and ignores a client timezone", async (country, timezone) => {
+    const result = await publishActivity(deps, host, validInput({ country, timezone: "America/New_York" }));
+    expect(result.activity).toMatchObject({ country, timezone });
+  });
+
+  it.each([["missing", undefined], ["empty", ""], ["null", null], ["unlisted", "US"]])(
+    "when the country is %s, refuses with a country field error without publishing",
+    async (_label, country) => {
+      const before = await activityCount();
+      const err = await publishActivity(deps, host, validInput({ country })).catch((e) => e);
+      expect(err).toBeInstanceOf(ActivityValidationError);
+      expect(err.fields).toHaveProperty("country");
+      expect(await activityCount()).toBe(before);
+    },
+  );
 
   it("keeps independently published activities on their own plans", async () => {
     const first = await publishActivity(deps, host, validInput({ title: "First" }));
@@ -116,7 +138,6 @@ describe("publishActivity", () => {
       ["endsAt", validInput({ endsAt: "not-a-date" })],
       ["endsAt", validInput({ startsAt: "2099-06-01T10:00:00Z", endsAt: "2099-06-01T10:00:00Z" })],
       ["country", validInput({ country: "US" })],
-      ["timezone", validInput({ timezone: "Mars/Olympus" })],
       ["priceMinorUnits", validInput({ priceMinorUnits: -1 })],
       ["priceMinorUnits", validInput({ priceMinorUnits: 10.5 })],
       ["currency", validInput({ currency: "eur" })],

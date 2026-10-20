@@ -9,13 +9,6 @@ export function initials(displayName: string): string {
   return word.slice(0, 2).toUpperCase();
 }
 
-/** "Africa/Lagos" → "Lagos time"; "UTC" stays "UTC". */
-export function zoneLabel(timezone: string): string {
-  if (!timezone.includes("/")) return timezone;
-  const city = timezone.split("/").pop()!.replaceAll("_", " ");
-  return `${city} time`;
-}
-
 export interface HostStatus {
   tone: "gray" | "blue" | "red";
   label: string;
@@ -70,13 +63,13 @@ export function durationLabel(startsAt: string, endsAt: string): string {
 }
 
 export const COUNTRIES = [
-  ["GB", "United Kingdom"],
-  ["IE", "Ireland"],
-  ["FR", "France"],
-  ["DE", "Germany"],
-  ["NL", "Netherlands"],
-  ["ES", "Spain"],
-  ["NG", "Nigeria"],
+  ["GB", "United Kingdom", "Europe/London"],
+  ["IE", "Ireland", "Europe/Dublin"],
+  ["FR", "France", "Europe/Paris"],
+  ["DE", "Germany", "Europe/Berlin"],
+  ["NL", "Netherlands", "Europe/Amsterdam"],
+  ["ES", "Spain", "Europe/Madrid"],
+  ["NG", "Nigeria", "Africa/Lagos"],
 ] as const;
 
 export function countryName(code: string): string {

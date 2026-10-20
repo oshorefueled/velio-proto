@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localWallToUtcInstant, isValidTimeZone } from "./schedule.js";
+import { localWallToUtcInstant } from "./schedule.js";
 
 /**
  * Focused risk check: the publication form converts the host's local wall
@@ -35,10 +35,5 @@ describe("localWallToUtcInstant", () => {
   it("rejects malformed wall input and unknown zones", () => {
     expect(() => localWallToUtcInstant("tomorrow", "UTC")).toThrow();
     expect(() => localWallToUtcInstant("2026-01-15T09:30", "Mars/Olympus")).toThrow();
-  });
-
-  it("validates zone names for the picker", () => {
-    expect(isValidTimeZone("Europe/Stockholm")).toBe(true);
-    expect(isValidTimeZone("Not/AZone")).toBe(false);
   });
 });

@@ -104,7 +104,7 @@ async function httpPublish(token: string, capacity: number): Promise<string> {
       title: "Concurrency Kayak",
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 1000,
       currency: "EUR",
       spots: capacity,

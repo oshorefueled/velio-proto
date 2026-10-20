@@ -119,7 +119,7 @@ export async function runAcceptanceLoad(options: LoadOptions = {}): Promise<Load
       title: `${LABEL_PREFIX} load activity`,
       startsAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 48 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 1000,
       currency: "EUR",
       spots: operations,

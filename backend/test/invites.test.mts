@@ -78,7 +78,7 @@ async function publishAs(
       title,
       startsAt: new Date(Date.now() + startsInMs).toISOString(),
       endsAt: new Date(Date.now() + startsInMs + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC",
+      country: "GB",
       priceMinorUnits: 1000,
       currency: "EUR",
       spots: 5,

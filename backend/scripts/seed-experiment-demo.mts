@@ -32,7 +32,7 @@ try {
     const base = { description: "A guided activity.", itinerary: "Meet, explore, return.",
       startsAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
       endsAt: new Date(Date.now() + 7 * 24 * 3600 * 1000 + 2 * 3600 * 1000).toISOString(),
-      timezone: "UTC", priceMinorUnits: 1000, currency: "EUR", spots: 20,
+      country: "GB", priceMinorUnits: 1000, currency: "EUR", spots: 20,
     };
     const treatment = await publishActivity(
       { pool, experiment: { allocationPercent: 100, experimentVersion: config.experimentVersion } },
