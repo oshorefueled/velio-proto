@@ -114,7 +114,7 @@ A declared load run reports request counts, concurrency, connected viewers, fail
 
 Hosts create activities and want people to join them. Bookers choose an activity, secure a spot and bring friends. Invited guests need enough context to decide whether to join, followed by a short path to confirmation.
 
-The activity page shows its description, itinerary, date and time, duration, country, price and remaining spots, together with the host's name, summary and previous activities. Times are shown in the activity's timezone, with its GMT offset when that differs from the viewer's. The Plan is the shared itinerary that bookers join. A successfully booked guest becomes a booker using the same account.
+The activity page shows its description, itinerary, date and time, country, price and remaining spots, together with the host's name, summary and previous activities. Times are shown in the activity's timezone, with its GMT offset when that differs from the viewer's. The Plan is the shared itinerary that bookers join. A successfully booked guest becomes a booker using the same account.
 
 The prototype has a horizontal Host / Booker / Guest selector on web. Host and Booker open seeded accounts with activities and bookings respectively. Guest provides email sign-in to another account, including one created on mobile; signing out returns to Sign in. These are access shortcuts for accounts with the same hosting and booking capabilities.
 

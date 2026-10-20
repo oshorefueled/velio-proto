@@ -1,7 +1,7 @@
 import { IdentityPanel } from "../IdentityPanel.js";
 import { Participants } from "../host/Participants.js";
 import { formatMoneyCompact } from "../money.js";
-import { chipDateRange, chipDateTime, countryName, durationLabel, initials, zoneOffsetLabel } from "../present.js";
+import { chipDateRange, chipDateTime, countryName, initials, zoneOffsetLabel } from "../present.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { BookingStore, BookingState } from "../booking-store.js";
 import type { ActivityDetailView } from "../api.js";
@@ -10,7 +10,7 @@ import { compareVersions, useLiveAcknowledgement, useLiveAvailability } from "..
 import { useSession } from "../session.js";
 import { emitActivityViewed } from "../telemetry.js";
 import { InviteCard } from "./InviteCard.js";
-import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon, ClockIcon, GlobeIcon, GroupIcon } from "../icons.js";
+import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon, GlobeIcon, GroupIcon } from "../icons.js";
 
 function BookingControls({
   booking,
@@ -338,37 +338,16 @@ export function GuestActivity({
       {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
       {reviewing && <button type="button" className="button-ghost" onClick={() => setReviewing(false)}>Back to activity</button>}
       <div className="detail-layout">
-        <div className="detail-main">
+        <div className="detail-head">
           <h1 className="detail-title" id="guest-detail-heading" ref={heading} tabIndex={-1}>{detail.title}</h1>
-          <p className="detail-sub">{detail.description}</p>
           <div className="detail-facts">
             <span className="hosted-by"><span className="avatar">{initials(detail.hostDisplayName)}</span> <span>Hosted by <strong>{detail.hostDisplayName}</strong></span></span>
-            <span className="fact-divider" aria-hidden="true" />
-            <span className="chip"><CalendarIcon /> {chipDateRange(detail.startsAt, detail.endsAt, detail.timezone)}</span>
-            {offset !== null && <span className="chip">{offset}</span>}
+            {detail.country !== null && <>
+              <span className="fact-divider" aria-hidden="true" />
+              <span className="detail-country"><GlobeIcon /> {countryName(detail.country)}</span>
+            </>}
             {detail.started && <span className="pill pill-blue">Started</span>}
           </div>
-          {!reviewing && <>
-            <section className="detail-section">
-              <h2>About this activity</h2>
-              <p className="activity-prose">{detail.description}</p>
-            </section>
-            <section className="detail-section">
-              <h2>What we&rsquo;ll do</h2>
-              <p className="activity-prose">{detail.itinerary}</p>
-            </section>
-            <section className="detail-section">
-              <h2>Meet your host</h2>
-              <div className="host-card">
-                <span className="avatar avatar-large">{initials(detail.hostDisplayName)}</span>
-                <div className="host-identity">
-                  <div className="host-name">{detail.hostDisplayName}</div>
-                  <div className="host-role">Host</div>
-                </div>
-                <p className="host-summary">{detail.host?.summary || "This host has not added a background yet."}</p>
-              </div>
-            </section>
-          </>}
         </div>
         <aside className="detail-aside">
           <div className="aside-card">
@@ -416,28 +395,34 @@ export function GuestActivity({
               />
             )}
           </div>
-          <div className="aside-card aside-facts">
-            <div className="fact-row">
-              <span className="row-icon"><GroupIcon /></span>
-              <span className="row-label">Group size</span>
-              <span className="row-value">Up to {detail.capacity} people</span>
-            </div>
-            <div className="fact-row">
-              <span className="row-icon"><ClockIcon /></span>
-              <span className="row-label">Duration</span>
-              <span className="row-value">{durationLabel(detail.startsAt, detail.endsAt)}</span>
-            </div>
-            {detail.country !== null && <div className="fact-row">
-              <span className="row-icon"><GlobeIcon /></span>
-              <span className="row-label">Country</span>
-              <span className="row-value">{countryName(detail.country)}</span>
-            </div>}
-          </div>
           {(isOwner || currentBooking?.phase.kind === "confirmed") && !reviewing && (
             <InviteCard key={`${activityId}:${sessionToken}`} activityId={activityId} capabilities={capabilities} started={detail.started} onRefused={() => setRefresh((value) => value + 1)} />
           )}
           {isOwner && !reviewing && <div className="aside-card"><Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} /></div>}
         </aside>
+        <div className="detail-main">
+          {!reviewing && <>
+            <section className="detail-section">
+              <h2>About this activity</h2>
+              <p className="activity-prose">{detail.description}</p>
+            </section>
+            <section className="detail-section">
+              <h2>What we&rsquo;ll do</h2>
+              <p className="activity-prose">{detail.itinerary}</p>
+            </section>
+            <section className="detail-section">
+              <h2>Meet your host</h2>
+              <div className="host-card">
+                <span className="avatar avatar-large">{initials(detail.hostDisplayName)}</span>
+                <div className="host-identity">
+                  <div className="host-name">{detail.hostDisplayName}</div>
+                  <div className="host-role">Host</div>
+                </div>
+                <p className="host-summary">{detail.host?.summary || "This host has not added a background yet."}</p>
+              </div>
+            </section>
+          </>}
+        </div>
       </div>
       {!reviewing && <section className="detail-section previous-section">
         <h2>Previous activities</h2>

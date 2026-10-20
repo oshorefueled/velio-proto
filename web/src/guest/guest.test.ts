@@ -431,6 +431,28 @@ it("when a confirmed booking renders, the booking card keeps the confirmation an
   root = undefined;
 });
 
+it("when an activity page renders, the title row names the host and country, the description shows once, and no details card repeats the booking card", async () => {
+  await mount(async (url) => {
+    if (url.endsWith("/bookings/me")) return ok({ error: { code: "booking_not_found", message: "none" } }, 404);
+    if (url.includes("/activities/a")) return ok({ activity: detailOf("a", { description: "A calm evening paddle.", country: "GB" }), invites: {} });
+    if (url.endsWith("/activities")) return ok({ activities: [listItem("a")] });
+    return ok({});
+  });
+  const head = document.querySelector(".detail-head")!;
+  expect(head.querySelector("h1")?.textContent).toBe("Activity a");
+  expect(head.querySelector(".detail-facts")!.textContent).toContain("Hosted by Host");
+  expect(head.querySelector(".detail-facts")!.textContent).toContain("United Kingdom");
+  expect(head.textContent).not.toMatch(/Jun 2026/);
+  expect(document.body.textContent!.split("A calm evening paddle.")).toHaveLength(2);
+  expect(document.querySelector(".aside-facts")).toBeNull();
+  expect(document.body.textContent).not.toContain("Group size");
+  expect(document.body.textContent).not.toContain("Duration");
+  const aside = document.querySelector(".detail-aside")!;
+  const main = document.querySelector(".detail-main")!;
+  expect(head.compareDocumentPosition(aside) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(aside.compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 it("when reopening cannot check saved membership, only Check again is offered until absence is verified", async () => {
   let unavailable = true;
   let posts = 0;

@@ -53,15 +53,6 @@ export function chipDateRange(startsAt: string, endsAt: string, timezone: string
   return `${chipDateTime(startsAt, timezone)}–${end.time}${later}`;
 }
 
-export function durationLabel(startsAt: string, endsAt: string): string {
-  const minutes = Math.round((Date.parse(endsAt) - Date.parse(startsAt)) / 60_000);
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) return `${rest} min`;
-  if (rest === 0) return hours === 1 ? "1 hour" : `${hours} hours`;
-  return `${hours} h ${rest} min`;
-}
-
 export const COUNTRIES = [
   ["GB", "United Kingdom", "Europe/London"],
   ["IE", "Ireland", "Europe/Dublin"],

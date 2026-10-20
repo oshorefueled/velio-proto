@@ -477,7 +477,8 @@ textarea:focus-visible,
   font-size: 1rem;
 }
 
-.hosted-by {
+.hosted-by,
+.detail-country {
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
@@ -634,13 +635,34 @@ textarea:focus-visible,
 .detail-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 500px;
-  gap: 2.5rem;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "head aside"
+    "main aside";
+  gap: 0 2.5rem;
   align-items: start;
+}
+
+.detail-head {
+  grid-area: head;
+}
+
+.detail-main {
+  grid-area: main;
+}
+
+.detail-aside {
+  grid-area: aside;
 }
 
 @media (max-width: 1100px) {
   .detail-layout {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      "head"
+      "aside"
+      "main";
   }
 }
 
@@ -666,17 +688,11 @@ textarea:focus-visible,
   font-size: 3rem;
   font-weight: 750;
   letter-spacing: -0.025em;
-  margin: 0 0 0.2em;
+  margin: 0 0 0.5em;
 }
 
 .detail-title:focus {
   outline: none;
-}
-
-.detail-sub {
-  color: var(--ink-soft);
-  font-size: 1.2rem;
-  margin: 0 0 1.2rem;
 }
 
 .detail-facts {
@@ -838,26 +854,6 @@ textarea:focus-visible,
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
-}
-
-.aside-facts {
-  padding-block: 0.6rem;
-}
-
-.fact-row {
-  display: grid;
-  grid-template-columns: 44px 120px minmax(0, 1fr);
-  gap: 1rem;
-  align-items: center;
-  padding: 0.75rem 0;
-}
-
-.fact-row + .fact-row {
-  border-top: 1px solid var(--border);
-}
-
-.fact-row .row-label {
-  color: var(--ink-soft);
 }
 
 .book-cta {
@@ -1545,13 +1541,5 @@ dialog.overlay::backdrop {
 
   .activity-card {
     padding: 1.3rem 1.3rem 1.2rem;
-  }
-
-  .fact-row {
-    grid-template-columns: 44px minmax(0, 1fr) auto;
-  }
-
-  .fact-row .row-value {
-    text-align: right;
   }
 }

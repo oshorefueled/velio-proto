@@ -192,13 +192,13 @@ function clipboard(writeText: (text: string) => Promise<void>) {
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
 }
 
-it("when a confirmed booker opens the activity, the invite card follows the details card and rendering it records nothing", async () => {
+it("when a confirmed booker opens the activity, the invite card follows the booking card and rendering it records nothing", async () => {
   const posts: string[] = [];
   const events: string[] = [];
   await mount(inviteTransport({ myBooking: savedBooking, events, create: (_url, init) => { posts.push(init.body ?? ""); return ok({}, 500); } }), { session: bookerUser });
   const aside = document.querySelector(".detail-aside")!;
   const cards = [...aside.children].map((card) => card.className);
-  expect(cards.indexOf("aside-card invite-card")).toBe(cards.indexOf("aside-card aside-facts") + 1);
+  expect(cards.indexOf("aside-card invite-card")).toBe(1);
   const card = document.querySelector(".invite-card")!;
   expect(card.textContent).toContain("Invite someone you can vouch for");
   expect(card.querySelector("#vouch-contact")).not.toBeNull();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chipDateRange, chipDateTime, countryName, durationLabel, hostStatus, initials, zoneOffsetLabel } from "./present.js";
+import { chipDateRange, chipDateTime, countryName, hostStatus, initials, zoneOffsetLabel } from "./present.js";
 import { formatMoneyCompact } from "./money.js";
 
 // Revamp mockups 1–4: presentation derivations shared by the redesigned
@@ -48,15 +48,6 @@ describe("chipDateRange", () => {
 
   it("says when the end falls on the next local day", () => {
     expect(chipDateRange("2026-10-22T20:30:00Z", "2026-10-23T00:00:00Z", "Europe/London")).toBe("Thu, 22 Oct 2026 · 21:30–01:00 (next day)");
-  });
-});
-
-describe("durationLabel", () => {
-  it("derives the duration from start and end, across a DST change", () => {
-    expect(durationLabel("2026-10-22T17:30:00Z", "2026-10-22T19:30:00Z")).toBe("2 hours");
-    expect(durationLabel("2026-10-25T00:30:00Z", "2026-10-25T04:00:00Z")).toBe("3 h 30 min");
-    expect(durationLabel("2026-10-22T17:30:00Z", "2026-10-22T18:15:00Z")).toBe("45 min");
-    expect(durationLabel("2026-10-22T17:30:00Z", "2026-10-22T18:30:00Z")).toBe("1 hour");
   });
 });
 
