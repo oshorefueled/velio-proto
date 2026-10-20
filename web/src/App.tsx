@@ -12,6 +12,12 @@ import { SavedBookings } from "./SavedBookings.js";
 import { useSession } from "./session.js";
 
 type Page = "explore" | "hosting" | "bookings" | "publish";
+const PAGES: readonly string[] = ["explore", "hosting", "bookings", "publish"];
+
+function pageIn(search: string): Page | null {
+  const page = new URLSearchParams(search).get("page");
+  return page !== null && PAGES.includes(page) ? page as Page : null;
+}
 
 const PAGE_TITLE: Record<"explore" | "hosting" | "bookings", { title: string; sub: string }> = {
   explore: { title: "Explore activities", sub: "Discover something worth doing together." },
@@ -35,6 +41,8 @@ export function App(): ReactNode {
     });
   }, [bookingStore]);
   const [page, setPage] = useState<Page>(() => {
+    const linked = pageIn(location.search);
+    if (linked !== null) return linked;
     if (new URLSearchParams(location.search).has("activity") || !ready) return "explore";
     return status.user.email === "host@velio.test" ? "hosting" : status.user.email === "booker@velio.test" ? "bookings" : "explore";
   });
@@ -56,22 +64,24 @@ export function App(): ReactNode {
     else promptDialog.current?.close?.();
   }, [needsSignIn, ready]);
 
-  const syncUrl = useCallback((activityId: string | null, code: string | null) => {
+  const syncUrl = useCallback((listPage: Page, activityId: string | null, code: string | null) => {
     const url = new URL(location.href);
+    url.searchParams.set("page", listPage);
     if (activityId) url.searchParams.set("activity", activityId); else url.searchParams.delete("activity");
     if (code) url.searchParams.set("invite", code); else url.searchParams.delete("invite");
     if (url.href !== location.href) history.pushState(null, "", url);
   }, []);
-  const selectActivity = useCallback((id: string | null) => {
-    setSelectedId(id); setInviteCode(null);
-    syncUrl(id, null);
-  }, [syncUrl]);
+  const selectActivity = useCallback((id: string | null, listPage: Page = page) => {
+    setPage(listPage); setSelectedId(id); setInviteCode(null);
+    syncUrl(listPage, id, null);
+  }, [page, syncUrl]);
   function navigate(next: Page) {
-    setPage(next); setSelectedId(null); setInviteCode(null);
-    syncUrl(null, null);
+    selectActivity(null, next);
   }
   function chooseAccount(account: DemoAccount) {
-    setPage(account === "Host" ? "hosting" : account === "Booker" ? "bookings" : "explore");
+    const next = account === "Host" ? "hosting" : account === "Booker" ? "bookings" : "explore";
+    setPage(next);
+    syncUrl(next, selectedId, inviteCode);
     setIdentityPrompt(false);
   }
 
@@ -95,7 +105,7 @@ export function App(): ReactNode {
       const params = new URLSearchParams(location.search);
       setSelectedId(params.get("activity"));
       setInviteCode(params.get("invite")?.trim().toUpperCase() || null);
-      setPage("explore");
+      setPage(pageIn(location.search) ?? "explore");
     }
     window.addEventListener("popstate", pop);
     return () => window.removeEventListener("popstate", pop);
@@ -131,11 +141,11 @@ export function App(): ReactNode {
     </dialog>}
     {status.status === "credential-lost" && status.restoring && <div className="page"><p className="notice" role="status">Restoring access for {status.lostFrom?.email}… Your checkout and drafts are kept.</p></div>}
     <main>
-      {inviteCode && <div className="page"><InviteLanding key={inviteCode} code={inviteCode} onCodeChange={code => { setInviteCode(code); syncUrl(selectedId, code); }} visible booking={bookingStore} onRequestIdentity={() => setIdentityPrompt(true)} onBrowse={() => { selectActivity(null); setPage("explore"); }} /></div>}
+      {inviteCode && <div className="page"><InviteLanding key={inviteCode} code={inviteCode} onCodeChange={code => { setInviteCode(code); syncUrl(page, selectedId, code); }} visible booking={bookingStore} onRequestIdentity={() => setIdentityPrompt(true)} onBrowse={() => selectActivity(null, "explore")} onViewBooking={activityId => selectActivity(activityId, "bookings")} /></div>}
       {/* The publish draft stays mounted (hidden) so switching accounts,
           pages or opening an invitation retains every entered value. */}
       <div className="page page-narrow" hidden={page !== "publish" || !!inviteCode}>
-        <PublishForm onPublished={activity => { selectActivity(activity.id); setPage("hosting"); reloadHosted(); }} />
+        <PublishForm onPublished={activity => { selectActivity(activity.id, "hosting"); reloadHosted(); }} />
       </div>
       {!inviteCode && <>
         {page !== "publish" && (showDetail && selectedId

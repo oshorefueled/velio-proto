@@ -57,25 +57,6 @@ function ClaimControls({
         <div className="notice notice-good" role="status">
           Your spot is saved — you are in the plan.
         </div>
-        <dl className="detail-grid receipt-grid" aria-label="Saved booking">
-          <div>
-            <dt>Booking</dt>
-            <dd>
-              <code>{phase.booking.id}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Saved</dt>
-            <dd>
-              {new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" }).format(
-                new Date(phase.booking.createdAt),
-              )}
-            </dd>
-          </div>
-        </dl>
-        <p className="hint">
-          This is your saved record — you can return to your place from your saved bookings.
-        </p>
       </div>
     );
   }
@@ -101,11 +82,6 @@ function ClaimControls({
         <div className="notice notice-warn" role="alert">
           {phase.message}
         </div>
-        {phase.reason === "invite-mismatch" && (
-          <p className="hint">
-            Change account above to sign in with the invited email.
-          </p>
-        )}
         {(phase.reason === "absent" || phase.reason === "failed" || phase.reason === "rate-limited") && (
           <button type="button" className="button-primary" onClick={onClaim} disabled={!claimable || (retryAt !== undefined && now < retryAt)}>
             {claimable ? "Try claiming again" : "Claiming is unavailable right now"}
@@ -170,6 +146,7 @@ export function InviteLanding({
   booking,
   onRequestIdentity,
   onBrowse,
+  onViewBooking,
   onCodeChange,
 }: {
   code: string;
@@ -177,6 +154,7 @@ export function InviteLanding({
   booking: BookingStore;
   onRequestIdentity: () => void;
   onBrowse: () => void;
+  onViewBooking: (activityId: string) => void;
   onCodeChange: (code: string) => void;
 }): ReactNode {
   const { api, state } = useSession();
@@ -496,6 +474,7 @@ export function InviteLanding({
             </p>
           )}
           <div className="invite-actions">
+            {currentBooking?.phase.kind === "confirmed" && <button type="button" className="button-primary" onClick={() => onViewBooking(preview.activity.id)}>View my booking</button>}
             <button type="button" className="button-ghost" onClick={onBrowse}>Browse activities</button>
           </div>
         </>
