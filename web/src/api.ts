@@ -73,6 +73,7 @@ export interface PublicActivityView {
   id: string;
   hostId: string;
   title: string;
+  description?: string;
   startsAt: string;
   timezone: string;
   priceMinorUnits: number;

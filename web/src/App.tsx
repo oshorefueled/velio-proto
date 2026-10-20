@@ -14,6 +14,12 @@ import { useSession } from "./session.js";
 
 type Page = "explore" | "hosting" | "bookings" | "publish";
 
+const PAGE_TITLE: Record<"explore" | "hosting" | "bookings", { title: string; sub: string }> = {
+  explore: { title: "Explore activities", sub: "Discover something worth doing together." },
+  hosting: { title: "My activities", sub: "Manage what you're hosting and keep plans moving." },
+  bookings: { title: "My bookings", sub: "The plans you have already joined." },
+};
+
 export function App(): ReactNode {
   const { api, state, store, authorized } = useSession();
   const status = state.status;
@@ -33,7 +39,7 @@ export function App(): ReactNode {
     if (new URLSearchParams(location.search).has("activity") || !ready) return "explore";
     return status.user.email === "host@demo.velio.test" ? "hosting" : status.user.email === "booker@demo.velio.test" ? "bookings" : "explore";
   });
-  const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(location.search).get("activity") || localStorage.getItem("velio.selected.v1") || null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(location.search).get("activity"));
   const [view, setView] = useState<"activity" | "invites">(() => new URLSearchParams(location.search).get("view") === "invites" ? "invites" : "activity");
   const [inviteCode, setInviteCode] = useState<string | null>(() => new URLSearchParams(location.search).get("invite")?.trim().toUpperCase() || null);
   const [hosted, setHosted] = useState<{ activities: HostActivityView[]; loading: boolean; error: string | null }>({ activities: [], loading: false, error: null });
@@ -62,11 +68,10 @@ export function App(): ReactNode {
   const selectActivity = useCallback((id: string | null) => {
     setSelectedId(id); setView("activity"); setInviteCode(null);
     syncUrl(id, "activity", null);
-    localStorage.setItem("velio.selected.v1", id ?? "");
   }, [syncUrl]);
   function navigate(next: Page) {
-    setPage(next); setView("activity"); setInviteCode(null);
-    syncUrl(selectedId, "activity", null);
+    setPage(next); setSelectedId(null); setView("activity"); setInviteCode(null);
+    syncUrl(null, "activity", null);
   }
   function chooseAccount(account: DemoAccount) {
     setPage(account === "Host" ? "hosting" : account === "Booker" ? "bookings" : "explore");
@@ -102,41 +107,56 @@ export function App(): ReactNode {
     return () => window.removeEventListener("popstate", pop);
   }, []);
 
+  // The redesigned screens are full pages: the selected activity is the
+  // detail page, reached from any list and left via its back link or the
+  // main navigation, which always opens that page's list.
+  const showDetail = selectedId !== null && view === "activity" && page !== "publish";
+  const backLabel = page === "hosting" ? "Back to My activities" : page === "bookings" ? "Back to My bookings" : "Back to Explore";
+
   return <div className="app-shell">
-    <header className="masthead">
-      <div><p className="eyebrow">Velio</p><h1>Good plans. Better company.</h1></div>
-      <AccountSelector onSelect={chooseAccount} onSignIn={() => setIdentityPrompt(true)} />
+    <header className="app-nav">
+      <div className="app-nav-inner">
+        <span className="brand">Velio</span>
+        <nav className="nav-links" aria-label="Main navigation">
+          <button type="button" aria-current={page === "explore" ? "page" : undefined} onClick={() => navigate("explore")}>Explore</button>
+          {ready && <>
+            <button type="button" aria-current={page === "bookings" ? "page" : undefined} onClick={() => navigate("bookings")}>My bookings</button>
+            <button type="button" aria-current={page === "hosting" ? "page" : undefined} onClick={() => navigate("hosting")}>My activities</button>
+          </>}
+        </nav>
+        <div className="nav-side">
+          <AccountSelector onSelect={chooseAccount} onSignIn={() => setIdentityPrompt(true)} />
+          {ready && <button type="button" className="button-primary publish-action" aria-current={page === "publish" ? "page" : undefined} onClick={() => navigate("publish")}>Publish activity</button>}
+        </div>
+      </div>
     </header>
-    <nav className="product-nav" aria-label="Main navigation">
-      <button type="button" aria-current={page === "explore" ? "page" : undefined} onClick={() => navigate("explore")}>Explore activities</button>
-      {ready && <>
-        <button type="button" aria-current={page === "bookings" ? "page" : undefined} onClick={() => navigate("bookings")}>My bookings</button>
-        <button type="button" aria-current={page === "hosting" ? "page" : undefined} onClick={() => navigate("hosting")}>My activities</button>
-        <button type="button" className="button-primary publish-action" aria-current={page === "publish" ? "page" : undefined} onClick={() => navigate("publish")}>Publish activity</button>
-      </>}
-    </nav>
     {needsSignIn && !ready && <dialog ref={promptDialog} className="overlay" aria-label="Select your identity" onCancel={() => setIdentityPrompt(false)}>
       <button type="button" className="button-ghost" onClick={() => { setIdentityPrompt(false); if (status.status === "credential-lost") store.signOut(); }}>Close</button>
       <IdentityPanel contextNote="Your draft and selected activity are kept." inviteCode={inviteCode ?? undefined} />
     </dialog>}
-    {status.status === "credential-lost" && status.restoring && <p className="notice" role="status">Restoring access for {status.lostFrom?.email}… Your checkout and drafts are kept.</p>}
-    <main className={`workspace${page === "publish" && !inviteCode ? " publishing" : ""}`}>
-      <div className="column publish-column" hidden={page !== "publish" || !!inviteCode}>
+    {status.status === "credential-lost" && status.restoring && <div className="page"><p className="notice" role="status">Restoring access for {status.lostFrom?.email}… Your checkout and drafts are kept.</p></div>}
+    <main>
+      {inviteCode && <div className="page"><InviteLanding key={inviteCode} code={inviteCode} onCodeChange={code => { setInviteCode(code); syncUrl(selectedId, view, code); }} visible booking={bookingStore} onRequestIdentity={() => setIdentityPrompt(true)} onBrowse={() => { selectActivity(null); setPage("explore"); }} /></div>}
+      {/* The publish draft stays mounted (hidden) so switching accounts,
+          pages or opening an invitation retains every entered value. */}
+      <div className="page page-narrow" hidden={page !== "publish" || !!inviteCode}>
         <PublishForm onPublished={activity => { selectActivity(activity.id); setPage("hosting"); reloadHosted(); }} />
       </div>
-      {!inviteCode && page !== "publish" && <>
-        <div className="column">
-          {page === "explore" ? <ActivityBrowser selectedId={selectedId} onSelect={selectActivity} bookingRevision={bookingRevision} live={liveAvailability} />
-            : page === "hosting" ? <HostedActivities activities={hosted.activities} selectedId={selectedId} onSelect={selectActivity} reload={reloadHosted} loading={hosted.loading} error={hosted.error} />
-              : ready ? <SavedBookings onSelect={selectActivity} /> : <p className="hint">Sign in to see your bookings.</p>}
-        </div>
-        <div className="column">
-          {view === "invites" && selectedId ? <InvitePanel key={selectedId} activityId={selectedId} onBack={backToActivity} onRequestIdentity={() => setIdentityPrompt(true)} />
-            : selectedId ? <GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onOpenInvites={openInvites} onAvailability={setLiveAvailability} />
-              : <div className="selection-intro"><p className="eyebrow">{page === "hosting" ? "Make something happen" : page === "bookings" ? "Your next outing" : "Find your people"}</p><h2>{page === "hosting" ? "Bring a good plan to life." : "A little adventure starts here."}</h2><p>{page === "hosting" ? "Choose an activity to see its bookings, or publish something new." : "Choose an activity to see the itinerary, meet your host and plan your day."}</p></div>}
-        </div>
+      {!inviteCode && <>
+        {page !== "publish" && (view === "invites" && selectedId
+          ? <div className="page"><InvitePanel key={selectedId} activityId={selectedId} onBack={backToActivity} onRequestIdentity={() => setIdentityPrompt(true)} /></div>
+          : showDetail && selectedId
+            ? <div className="page"><GuestActivity key={selectedId} activityId={selectedId} booking={bookingStore} visible observationId={observationId} onOpenInvites={openInvites} onAvailability={setLiveAvailability} onBack={() => selectActivity(null)} backLabel={backLabel} /></div>
+            : <div className="page">
+              <div className="page-head">
+                <h1>{PAGE_TITLE[page].title}</h1>
+                <p className="page-sub">{PAGE_TITLE[page].sub}</p>
+              </div>
+              {page === "explore" ? <ActivityBrowser selectedId={selectedId} onSelect={selectActivity} bookingRevision={bookingRevision} live={liveAvailability} />
+                : page === "hosting" ? <HostedActivities activities={hosted.activities} selectedId={selectedId} onSelect={selectActivity} reload={reloadHosted} loading={hosted.loading} error={hosted.error} />
+                  : ready ? <SavedBookings onSelect={selectActivity} /> : <p className="hint">Sign in to see your bookings.</p>}
+            </div>)}
       </>}
-      {inviteCode && <div className="column invite-column"><InviteLanding key={inviteCode} code={inviteCode} onCodeChange={code => { setInviteCode(code); syncUrl(selectedId, view, code); }} visible booking={bookingStore} onRequestIdentity={() => setIdentityPrompt(true)} onBrowse={() => { selectActivity(null); setPage("explore"); }} /></div>}
     </main>
   </div>;
 }

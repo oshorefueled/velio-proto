@@ -1,6 +1,7 @@
 import { IdentityPanel } from "../IdentityPanel.js";
 import { Participants } from "../host/Participants.js";
-import { formatMoney } from "../money.js";
+import { formatMoneyCompact } from "../money.js";
+import { chipDateTime, initials, zoneLabel } from "../present.js";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { BookingStore, BookingState } from "../booking-store.js";
 import type { ActivityDetailView } from "../api.js";
@@ -8,13 +9,19 @@ import { LiveStatus } from "../live/LiveStatus.js";
 import { compareVersions, useLiveAcknowledgement, useLiveAvailability } from "../live/availability.js";
 import { useSession } from "../session.js";
 import { emitActivityViewed } from "../telemetry.js";
+import { ArrowLeftIcon, ArrowRightIcon, CalendarIcon, GlobeIcon, GroupIcon } from "../icons.js";
 
 /**
- * Public activity detail with the booking panel (issue #15, US02/03). Facts
- * load before any identity selection; booking requires one. The booking
- * phase comes from the shared controller (booking-store.ts), so pending is
- * never a confirmation, an unknown outcome reconciles against the saved
- * booking, and a refusal refreshes the real facts instead of claiming them.
+ * Public activity detail with the booking panel (issue #15, US02/03), laid
+ * out as the full detail page of the revamp: facts and story on the left,
+ * price, availability and booking in the sidebar card. Facts load before
+ * any identity selection; booking requires one. The booking phase comes
+ * from the shared controller (booking-store.ts), so pending is never a
+ * confirmation, an unknown outcome reconciles against the saved booking,
+ * and a refusal refreshes the real facts instead of claiming them.
+ *
+ * The hero gallery is decorative structure only: the API carries no photos,
+ * and none are invented here.
  */
 
 
@@ -55,7 +62,7 @@ function BookingControls({
         <div className="notice notice-good" role="status">
           Your spot is saved — you are in the plan for {detail.title}.
         </div>
-        <dl className="detail-grid receipt-grid" aria-label="Saved booking">
+        <dl className="receipt-grid" aria-label="Saved booking">
           <div>
             <dt>Booking</dt>
             <dd>
@@ -150,7 +157,7 @@ function BookingControls({
   if (detail.started) {
     return (
       <div className="booking-panel">
-        <button type="button" className="button-primary" disabled>
+        <button type="button" className="button-primary book-cta" disabled>
           Booking closed
         </button>
         <p className="hint">This activity has started, so new bookings are closed.</p>
@@ -160,7 +167,7 @@ function BookingControls({
   if (detail.remainingSpots <= 0) {
     return (
       <div className="booking-panel">
-        <button type="button" className="button-primary" disabled>
+        <button type="button" className="button-primary book-cta" disabled>
           Full
         </button>
         <p className="hint">Every spot is taken. If one of your bookings exists, it is shown above.</p>
@@ -170,7 +177,9 @@ function BookingControls({
   if (!reviewing) {
     return (
       <div className="booking-panel">
-        <button type="button" className="button-primary" onClick={onReview}>Book a spot</button>
+        <button type="button" className="button-primary book-cta" onClick={onReview}>
+          Book a spot<ArrowRightIcon />
+        </button>
       </div>
     );
   }
@@ -180,10 +189,14 @@ function BookingControls({
   }
   return (
     <div className="booking-panel">
-      <button type="button" className="button-primary" onClick={onBook}>Confirm one spot</button>
+      <button type="button" className="button-primary book-cta" onClick={onBook}>Confirm one spot</button>
       <p className="hint">Your spot is confirmed once your booking is saved.</p>
     </div>
   );
+}
+
+function hostFirstName(hostDisplayName: string): string {
+  return hostDisplayName.split(" · ")[0];
 }
 
 export function GuestActivity({
@@ -193,6 +206,8 @@ export function GuestActivity({
   observationId,
   onOpenInvites,
   onAvailability,
+  onBack,
+  backLabel = "Back to Explore",
 }: {
   activityId: string;
   booking: BookingStore;
@@ -202,6 +217,9 @@ export function GuestActivity({
   /** Shared per selected activity — a sibling panel's emission is a duplicate. */
   observationId: string;
   onOpenInvites: () => void;
+  /** Return from the detail page to the list it was opened from. */
+  onBack?: () => void;
+  backLabel?: string;
 }): ReactNode {
   const { api, state } = useSession();
   const [reviewing, setReviewing] = useState(false);
@@ -319,9 +337,19 @@ export function GuestActivity({
     });
   }, [api, activityId, detail, loading, loadError, state.visitorId, sessionToken, visible, observationId]);
 
+  // Opening the page unmounts the card or row that had focus; land focus on
+  // the heading instead of leaving it on the document body.
+  const heading = useRef<HTMLHeadingElement>(null);
+  const detailId = detail?.id;
+  useEffect(() => {
+    if (detailId !== activityId) return;
+    if (document.activeElement === null || document.activeElement === document.body) heading.current?.focus();
+  }, [detailId, activityId]);
+
   if (loading) {
     return (
-      <section className="panel detail-panel" aria-busy="true" aria-label="Activity">
+      <section className="page" aria-busy="true" aria-label="Activity">
+        {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
         <p className="hint">Opening the activity…</p>
         <p className="hint">Availability is unknown until it loads — it is not zero.</p>
       </section>
@@ -329,7 +357,8 @@ export function GuestActivity({
   }
   if (loadError !== null) {
     return (
-      <section className="panel detail-panel" aria-label="Activity">
+      <section className="page" aria-label="Activity">
+        {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
         <div className="notice notice-warn" role="alert">
           {loadError} Availability is unknown, not zero.
         </div>
@@ -341,81 +370,141 @@ export function GuestActivity({
   }
   if (detail === null) return null;
 
-  const startsInZone = new Intl.DateTimeFormat(undefined, {
-    dateStyle: "full",
-    timeStyle: "short",
-    timeZone: detail.timezone,
-  }).format(new Date(detail.startsAt));
-
   return (
-    <section className="panel detail-panel" aria-labelledby={reviewing ? undefined : "guest-detail-heading"} aria-label={reviewing ? "Checkout" : "Activity"}>
-      {reviewing && (
-        <>
-          <button type="button" className="button-ghost" onClick={() => setReviewing(false)}>Back to activity</button>
-          <p className="eyebrow">{currentBooking?.phase.kind === "confirmed" ? "Your booking" : "Review your booking"}</p>
-        </>
-      )}
-      <p className="eyebrow">{detail.started ? "Started" : "Upcoming"}</p>
-      <h2 id="guest-detail-heading">{detail.title}</h2>
-      {!reviewing && <p className="activity-prose">{detail.description}</p>}
-      <dl className="detail-grid">
-        <div>
-          <dt>Starts</dt>
-          <dd>
-            <time dateTime={detail.startsAt}>{startsInZone} ({detail.timezone})</time>
-          </dd>
+    <section
+      className="page"
+      aria-labelledby={reviewing ? undefined : "guest-detail-heading"}
+      aria-label={reviewing ? "Checkout" : "Activity"}
+    >
+      {onBack && <button type="button" className="back-link" onClick={onBack}><ArrowLeftIcon />{backLabel}</button>}
+      {reviewing && <button type="button" className="button-ghost" onClick={() => setReviewing(false)}>Back to activity</button>}
+      <div className="detail-layout">
+        <div className="detail-main">
+          <h1 className="detail-title" id="guest-detail-heading" ref={heading} tabIndex={-1}>{detail.title}</h1>
+          <p className="detail-sub">{detail.description}</p>
+          <div className="detail-facts">
+            <span className="hosted-by"><span className="avatar">{initials(detail.hostDisplayName)}</span> Hosted by {hostFirstName(detail.hostDisplayName)}</span>
+            <span className="chip"><CalendarIcon /> {chipDateTime(detail.startsAt, detail.timezone)}</span>
+            {detail.started && <span className="pill pill-blue">Started</span>}
+          </div>
+          <div className="gallery-main" aria-hidden="true" />
+          <ul className="gallery-thumbs" aria-hidden="true">
+            {Array.from({ length: 5 }, (_, index) => <li key={index} className="gallery-thumb" />)}
+          </ul>
+          {!reviewing && <>
+            <section className="detail-section">
+              <h2>About this activity</h2>
+              <p className="activity-prose">{detail.description}</p>
+            </section>
+            <section className="detail-section">
+              <h2>What we&rsquo;ll do</h2>
+              <p className="activity-prose">{detail.itinerary}</p>
+            </section>
+            <section className="detail-section">
+              <h2>Meet your host</h2>
+              <div className="host-card">
+                <span className="avatar avatar-large">{initials(detail.hostDisplayName)}</span>
+                <div>
+                  <div className="host-name">{detail.hostDisplayName}</div>
+                  <div className="host-role">Host</div>
+                  <p>{detail.host?.summary || "This host has not added a background yet."}</p>
+                </div>
+              </div>
+            </section>
+            <section className="detail-section">
+              <h2>Previous activities</h2>
+              {detail.host?.previousActivities.length ? (
+                <ul className="previous-grid">
+                  {detail.host.previousActivities.map(activity => (
+                    <li key={activity.id} className="previous-card">
+                      <span className="previous-thumb" aria-hidden="true" />
+                      <span>
+                        <span>{activity.title}</span>
+                        <span className="card-spots-sub">{chipDateTime(activity.startsAt, detail.timezone)}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="hint">No previous activities yet.</p>}
+            </section>
+          </>}
         </div>
-        <div>
-          <dt>Price</dt>
-          <dd>{formatMoney(detail.priceMinorUnits, detail.currency)}</dd>
-        </div>
-        <div>
-          <dt>Spots</dt>
-          <dd>
-            {detail.bookedCount} booked · {detail.remainingSpots} remaining of {detail.capacity}
-          </dd>
-        </div>
-      </dl>
-      {detail.started ? <p className="notice" role="status">Bookings closed — this activity has started.</p> : detail.remainingSpots === 0 ? <p className="notice" role="status">Sold out — every spot is booked.</p> : null}
-      {reviewing && <p>1 spot · {state.status.status === "ready" ? `Booking as ${state.status.user.email}` : "Sign in below to continue"}</p>}
-      {!reviewing && (
-        <>
-          <h3>Itinerary</h3>
-          <p className="activity-prose">{detail.itinerary}</p>
-          <h3>Your host · {detail.hostDisplayName}</h3>
-          <p>{detail.host?.summary || "This host has not added a background yet."}</p>
-          <h4>Previous activities</h4>
-          {detail.host?.previousActivities.length ? <ul>{detail.host.previousActivities.map(activity => <li key={activity.id}>{activity.title}</li>)}</ul> : <p className="hint">No previous activities yet.</p>}
-        </>
-      )}
-      <LiveStatus live={live} />
-      {isOwner && !reviewing && <Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} />}
-      {currentBooking !== null && (
-        <BookingControls
-          booking={currentBooking}
-          detail={detail}
-          validityPending={validityPending}
-          onBook={() => {
-            if (!reviewing) {
-              setReviewing(true);
-              return;
-            }
-            if (sessionToken !== null) booking.submit(activityId, sessionToken);
-          }}
-          onCheckAgain={() => {
-            if (sessionToken !== null) booking.checkAgain(activityId, sessionToken);
-          }}
-          reviewing={reviewing}
-          onReview={() => setReviewing(true)}
-        />
-      )}
-      {(isOwner || currentBooking?.phase.kind === "confirmed") && (
-        <div className="invite-entry">
-          <button type="button" className="button-ghost" onClick={onOpenInvites}>
-            Invite someone to this plan
-          </button>
-        </div>
-      )}
+        <aside className="detail-aside">
+          <div className="aside-card">
+            <p className="aside-label">Price</p>
+            <p className="aside-price">{formatMoneyCompact(detail.priceMinorUnits, detail.currency)}</p>
+            <p className="aside-price-sub">per person</p>
+            <div className="aside-row">
+              <CalendarIcon />
+              <div>
+                <div className="row-label">Date and time</div>
+                <div className="row-value">{chipDateTime(detail.startsAt, detail.timezone)} <span className="chip">{zoneLabel(detail.timezone)}</span></div>
+              </div>
+            </div>
+            <div className="aside-row">
+              <GroupIcon />
+              <div>
+                <div className="row-label">Availability</div>
+                <div className="row-value">
+                  {detail.started
+                    ? <span>{detail.bookedCount} booked · {detail.remainingSpots} remaining</span>
+                    : detail.remainingSpots > 0
+                      ? <span className="spots-free">{detail.bookedCount} booked · {detail.remainingSpots === 1 ? "1 spot" : `${detail.remainingSpots} spots`} left</span>
+                      : <span className="spots-none">{detail.bookedCount} booked · no spots left</span>}
+                  <span className="card-spots-sub"> of {detail.capacity}</span>
+                </div>
+              </div>
+            </div>
+            {detail.started ? <p className="notice" role="status">Bookings closed — this activity has started.</p> : detail.remainingSpots === 0 ? <p className="notice" role="status">Sold out — every spot is booked.</p> : null}
+            {reviewing && <p>1 spot · {state.status.status === "ready" ? `Booking as ${state.status.user.email}` : "Sign in below to continue"}</p>}
+            <LiveStatus live={live} />
+            {currentBooking !== null && (
+              <BookingControls
+                booking={currentBooking}
+                detail={detail}
+                validityPending={validityPending}
+                onBook={() => {
+                  if (!reviewing) {
+                    setReviewing(true);
+                    return;
+                  }
+                  if (sessionToken !== null) booking.submit(activityId, sessionToken);
+                }}
+                onCheckAgain={() => {
+                  if (sessionToken !== null) booking.checkAgain(activityId, sessionToken);
+                }}
+                reviewing={reviewing}
+                onReview={() => setReviewing(true)}
+              />
+            )}
+            <p className="aside-note">No payment will be collected in this demo.</p>
+          </div>
+          <div className="aside-card">
+            <div className="aside-row">
+              <GroupIcon />
+              <div>
+                <div className="row-label">Group size</div>
+                <div className="row-value">Up to {detail.capacity} people</div>
+              </div>
+            </div>
+            <div className="aside-row">
+              <GlobeIcon />
+              <div>
+                <div className="row-label">Timezone</div>
+                <div className="row-value">{zoneLabel(detail.timezone)} <span className="hint-inline">({detail.timezone})</span></div>
+              </div>
+            </div>
+          </div>
+          {isOwner && !reviewing && <div className="aside-card"><Participants key={`${activityId}:${sessionToken}`} activityId={activityId} version={detail.availabilityVersion} /></div>}
+          {(isOwner || currentBooking?.phase.kind === "confirmed") && (
+            <div className="invite-entry">
+              <button type="button" className="button-ghost" onClick={onOpenInvites}>
+                Invite someone to this plan
+              </button>
+            </div>
+          )}
+        </aside>
+      </div>
     </section>
   );
 }

@@ -31,3 +31,23 @@ it("when capacity is fractional, publication retains the draft; correcting it pu
     expect(published).toBe("published");
   } finally { await act(async () => root.unmount()); container.remove(); localStorage.clear(); }
 });
+it("when a description runs past 500 characters, the counter shows its length and the full text is published", async () => {
+  localStorage.setItem("velio.session.v1", JSON.stringify({ token: "host", user: { id: "host", email: "host@example.test", displayName: "Host" } }));
+  const requests: Record<string, unknown>[] = [];
+  const transport: Transport = async (_url, init) => { requests.push(JSON.parse(init.body!)); return { status: 201, json: { activity: { id: "published" } } }; };
+  const container = document.createElement("div"); document.body.append(container);
+  const root = createRoot(container);
+  const long = "A long, detailed description. ".repeat(20).trim();
+  try {
+    await act(async () => root.render(createElement(SessionProvider, { transport, children: createElement(PublishForm, { onPublished: () => {} }) })));
+    async function fill(id: string, value: string) {
+      const input = container.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${id}`)!;
+      await act(async () => { Object.getOwnPropertyDescriptor(input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, "value")!.set!.call(input, value); input.dispatchEvent(new Event("input", { bubbles: true })); });
+    }
+    await fill("pub-title", "Sunset paddle"); await fill("pub-description", long); await fill("pub-itinerary", "Meet. Paddle. Tea."); await fill("pub-price", "12.50"); await fill("pub-spots", "6");
+    expect(container.querySelector<HTMLTextAreaElement>("#pub-description")!.maxLength).toBe(-1);
+    expect(container.textContent).toContain(`${long.length} characters`);
+    await act(async () => container.querySelector("form")!.requestSubmit());
+    expect(requests).toEqual([expect.objectContaining({ description: long })]);
+  } finally { await act(async () => root.unmount()); container.remove(); localStorage.clear(); }
+});
